@@ -8,7 +8,8 @@ A top-down shooter where the enemies are the **open bugs in your backlog**. Ever
 pnpm install
 pnpm dev        # http://127.0.0.1:5199
 pnpm check      # typecheck + oxlint (Ritmo rules) + ritmo-devtools lint + headless tests
-pnpm build && pnpm serve   # production: game + run server on a single port (PORT, default 8080)
+pnpm build && pnpm serve   # production on Node: game + run server on a single port (PORT, default 8080)
+pnpm serve:cloudflare      # production as deployed, locally: the Worker and its Durable Object (http://localhost:8787)
 ```
 
 `?tutti` in the URL unlocks every sprint for the session.
@@ -52,9 +53,23 @@ The simulation is a fixed-step (60 Hz) [Ritmo](https://github.com/typeonce-dev/r
 - `src/content/` — data: the made-up backlog, levels, clients. Closed tables with `satisfies Record<...>`. All text lives in `src/content/text/{en,it}.ts`, typed by `Strings` in `i18n.ts`; the simulation reads the language from the `Language` resource, fixed for the whole level.
 - `src/host/` — input (keyboard + mouse + touch sticks → intents), Canvas 2D renderer, client chat (DOM), WebAudio-synthesized audio (sound effects in `audio.ts`, music in the `music.ts` sequencer).
 - `src/net/protocol.ts` — the messages between the browser and the run server (JSON over WebSocket, path `/runs`), with validation of everything that comes from the browser.
-- `src/server/` — multiplayer runs: `rooms.ts` (rooms, lobby, names, each run's simulation, no networking), `socket.ts` (WebSocket with `ws` on any Node HTTP server), `main.ts` (production server). In development the plugin in `vite.config.ts` attaches runs to the dev server itself: `pnpm dev` is all you need.
-- The server is authoritative: it runs the same simulation at 60 Hz and sends the view at 30 Hz; browsers only send input and draw by interpolating between two frames (`src/host/net.ts`).
+- `src/server/` — multiplayer runs: `rooms.ts` (rooms, lobby, names, each run's simulation, no networking), `socket.ts` (WebSocket with `ws` on any Node HTTP server), `main.ts` (production server on Node), `worker.ts` (the Cloudflare deploy: a Worker and one Durable Object holding every run). In development the plugin in `vite.config.ts` attaches runs to the dev server itself: `pnpm dev` is all you need.
+- The server is authoritative: it runs the same simulation at 60 Hz and sends the view at 30 Hz; browsers only send input (30 times a second) and draw by interpolating between two frames (`src/host/net.ts`).
 - `test/simulation.test.ts` — an autopilot plays the levels headless with the same intents as a player, in teams too. `test/rooms.test.ts` — the rooms with fake browsers.
+
+## Deploy
+
+Production runs on Cloudflare Workers (`wrangler.jsonc`): the built game is static assets, and the runs live in a single Durable Object (`src/server/worker.ts`) running the same rooms as the Node server. GitHub Actions (`.github/workflows/ci.yml`) checks every pull request and deploys every push to `main`, once the repository has these settings:
+
+| Setting | Kind | Value |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | secret | an API token from the "Edit Cloudflare Workers" template, limited to your account and the domain's zone |
+| `CLOUDFLARE_ACCOUNT_ID` | secret | your Cloudflare account ID |
+| `DEPLOY_DOMAIN` | variable | the custom domain, e.g. `bug-killer.example.com`, in a zone on the same account; the first deploy creates its DNS record |
+
+Without `DEPLOY_DOMAIN` the workflow only checks, so a fork never tries to deploy. By hand: `pnpm exec wrangler login`, then `pnpm build && pnpm exec wrangler deploy --domain <your domain>`.
+
+The Workers Free plan is enough for a hobby. Static files are free and unlimited, and single player never touches the server. The Durable Object gets 100,000 requests a day, and incoming WebSocket messages count 1 in 20: at 30 inputs a second, about 18 hours of play per developer per day, reset at 00:00 UTC. Nothing is stored, so a deploy ends the runs in progress.
 
 ## License
 
