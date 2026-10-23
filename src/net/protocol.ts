@@ -12,6 +12,13 @@ import type { View } from "../sim/simulation.ts"
 
 export const SOCKET_PATH = "/runs"
 export const NAME_MAX = 16
+/** The longest message a browser may send; an input is well under it. */
+export const MESSAGE_MAX = 4096
+/**
+ * How often a browser says it is still there. A run server that cannot ping
+ * (the Durable Object in `src/server/worker.ts`) drops whoever goes quiet.
+ */
+export const KEEPALIVE_MS = 20000
 
 /** A run's code: easy to read out loud, and it looks like a ticket. */
 export const codePattern = /^RUN-\d{4}$/
@@ -44,6 +51,7 @@ export type ClientMessage =
   | { readonly t: "start"; readonly level?: LevelId }
   | { readonly t: "input"; readonly input: InputValue }
   | { readonly t: "leave" }
+  | { readonly t: "ping" }
 
 export type ServerMessage =
   | { readonly t: "room"; readonly room: RoomInfo; readonly you: number }
@@ -104,6 +112,8 @@ export const readClientMessage = (raw: string, isLevel: (id: unknown) => id is L
     }
     case "leave":
       return { t: "leave" }
+    case "ping":
+      return { t: "ping" }
     default:
       return null
   }

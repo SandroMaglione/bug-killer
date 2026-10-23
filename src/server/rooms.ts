@@ -249,6 +249,9 @@ export const makeRooms = (options: RoomsOptions = {}) => {
       case "leave":
         leave(peer)
         return
+      case "ping":
+        // Only says the browser is still there: the socket layer keeps track of that.
+        return
     }
   }
 

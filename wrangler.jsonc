@@ -1,0 +1,21 @@
+// The Cloudflare deploy: the built game as static assets, the runs in a Durable Object (`src/server/worker.ts`).
+// No account or domain here: CI passes them (see the README), so a fork deploys to its own account.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bug-killer",
+  "main": "src/server/worker.ts",
+  "compatibility_date": "2026-10-19",
+  "assets": {
+    "directory": "./dist",
+    // Every unknown path is the game, as on the Node server.
+    "not_found_handling": "single-page-application",
+    // Only the runs' socket (`SOCKET_PATH`) reaches the Worker; static files never do, and stay free.
+    "run_worker_first": ["/runs"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RUNS", "class_name": "Runs" }]
+  },
+  // The Free plan only has SQLite-backed Durable Objects; the runs store nothing anyway.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Runs"] }],
+  "observability": { "enabled": true }
+}

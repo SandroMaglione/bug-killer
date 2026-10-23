@@ -3,7 +3,7 @@
  * and the frames it sends, smoothed so that 30 updates a second draw like 60.
  */
 import type { Level } from "../content/levels.ts"
-import { SOCKET_PATH } from "../net/protocol.ts"
+import { KEEPALIVE_MS, SOCKET_PATH } from "../net/protocol.ts"
 import type { ClientMessage, NetView, ServerMessage } from "../net/protocol.ts"
 import type { Vec } from "../sim/schema.ts"
 import type { View } from "../sim/simulation.ts"
@@ -29,15 +29,19 @@ export const connect = (handlers: { readonly message: (message: ServerMessage) =
       console.error("bad message from the run server", error)
     }
   })
+  const send = (message: ClientMessage) => {
+    const data = JSON.stringify(message)
+    if (socket.readyState === WebSocket.OPEN) socket.send(data)
+    else if (socket.readyState === WebSocket.CONNECTING) queue.push(data)
+  }
+  // Between inputs (in the lobby, on the results screen) the server would not hear from this browser otherwise.
+  const keepalive = setInterval(() => send({ t: "ping" }), KEEPALIVE_MS)
   socket.addEventListener("close", () => {
+    clearInterval(keepalive)
     if (!closing) handlers.closed()
   })
   return {
-    send: (message) => {
-      const data = JSON.stringify(message)
-      if (socket.readyState === WebSocket.OPEN) socket.send(data)
-      else if (socket.readyState === WebSocket.CONNECTING) queue.push(data)
-    },
+    send,
     close: () => {
       closing = true
       socket.close()

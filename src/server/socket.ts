@@ -7,7 +7,7 @@ import type { Server } from "node:http"
 import { WebSocketServer } from "ws"
 import type { WebSocket } from "ws"
 
-import { SOCKET_PATH } from "../net/protocol.ts"
+import { MESSAGE_MAX, SOCKET_PATH } from "../net/protocol.ts"
 import type { ServerMessage } from "../net/protocol.ts"
 import { makeRooms } from "./rooms.ts"
 import type { Peer } from "./rooms.ts"
@@ -17,7 +17,7 @@ const HEARTBEAT_MS = 15000
 
 export const attachRuns = (http: Server) => {
   const rooms = makeRooms()
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 4096 })
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: MESSAGE_MAX })
   const alive = new WeakMap<WebSocket, boolean>()
 
   http.on("upgrade", (request, socket, head) => {
