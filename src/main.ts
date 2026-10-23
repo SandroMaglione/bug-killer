@@ -21,7 +21,7 @@ import type { ErrorCode, RoomInfo, ServerMessage } from "./net/protocol.ts"
 import { PARTY, STEP } from "./sim/constants.ts"
 import { makePickup } from "./sim/drafts.ts"
 import { Game, Pickup } from "./sim/schema.ts"
-import type { FxValue, Phase, PickupKind } from "./sim/schema.ts"
+import type { FxValue, InputValue, Phase, PickupKind } from "./sim/schema.ts"
 import { createSimulation, idleInput } from "./sim/simulation.ts"
 import type { View } from "./sim/simulation.ts"
 import "./style.css"
@@ -86,6 +86,11 @@ interface Remote {
   running: boolean
 }
 let remote: Remote | null = null
+/** Input goes to the run server every other step, 30 times a second: half the messages, same feel. */
+const INPUT_EVERY = 2
+let inputSteps = 0
+/** Snapshots taken since the last message: a dash or bomb pressed in between rides along with the next one. */
+let unsent: InputValue | null = null
 const levelById = (id: LevelId): Level => playable.find((level) => level.id === id) ?? endlessLevel
 
 /** "lobby" is every multiplayer screen before a run: the join form and the room. */
@@ -741,7 +746,16 @@ const loop = FixedLoop.start({
   update: () => {
     if (remote) {
       // Multiplayer: the server steps the world; this browser only says what its developer does.
-      if (remote.running && mode === "playing") remote.connection.send({ t: "input", input: input.snapshot() })
+      if (remote.running && mode === "playing") {
+        // Every step still snapshots, so the cursor keeps following the mouse at 60 Hz.
+        const latest = input.snapshot()
+        unsent = unsent ? { ...latest, dash: unsent.dash || latest.dash, bomb: unsent.bomb || latest.bomb } : latest
+        inputSteps += 1
+        if (inputSteps % INPUT_EVERY === 0) {
+          remote.connection.send({ t: "input", input: unsent })
+          unsent = null
+        }
+      }
       return Result.success(undefined)
     }
     if (!sim || mode !== "playing") return Result.success(undefined)

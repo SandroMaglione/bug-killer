@@ -14,5 +14,7 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "test", "vite.config.ts"],
+  // Cloudflare's runtime, not the DOM nor Node: checked by tsconfig.worker.json.
+  "exclude": ["src/server/worker.ts"]
 }

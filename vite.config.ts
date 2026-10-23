@@ -3,9 +3,6 @@ import type { Plugin } from "vite"
 
 import { attachRuns } from "./src/server/socket.ts"
 
-// The public tunnel to this machine; Vite rejects unknown Host headers otherwise.
-const allowedHosts = ["bug-killer.giovannilondero.dev"]
-
 /** The multiplayer runs, served by the dev and preview servers themselves. */
 const runs = (): Plugin => ({
   name: "bug-killer-runs",
@@ -19,6 +16,5 @@ const runs = (): Plugin => ({
 
 export default defineConfig({
   plugins: [runs()],
-  server: { port: 5199, allowedHosts },
-  preview: { allowedHosts }
+  server: { port: 5199 }
 })
