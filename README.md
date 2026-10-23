@@ -55,3 +55,7 @@ The simulation is a fixed-step (60 Hz) [Ritmo](https://github.com/typeonce-dev/r
 - `src/server/` — multiplayer runs: `rooms.ts` (rooms, lobby, names, each run's simulation, no networking), `socket.ts` (WebSocket with `ws` on any Node HTTP server), `main.ts` (production server). In development the plugin in `vite.config.ts` attaches runs to the dev server itself: `pnpm dev` is all you need.
 - The server is authoritative: it runs the same simulation at 60 Hz and sends the view at 30 Hz; browsers only send input and draw by interpolating between two frames (`src/host/net.ts`).
 - `test/simulation.test.ts` — an autopilot plays the levels headless with the same intents as a player, in teams too. `test/rooms.test.ts` — the rooms with fake browsers.
+
+## License
+
+[MIT](LICENSE)
