@@ -13,7 +13,7 @@ export interface Connection {
   readonly close: () => void
 }
 
-/** Opens the socket on the same host that served the page (the dev server, the tunnel, or production). */
+/** Opens the socket on the same host that served the page (the dev server or production). */
 export const connect = (handlers: { readonly message: (message: ServerMessage) => void; readonly closed: () => void }): Connection => {
   const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${SOCKET_PATH}`)
   const queue: Array<string> = []
