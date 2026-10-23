@@ -1,57 +1,57 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+<img src="public/assets/icon.svg" width="64" height="64" alt="">
 
 # Bug Killer
 
-Uno sparatutto top-down dove i nemici sono i **bug aperti del backlog**. Ogni sprint è un progetto, ogni boss è il ticket peggiore del progetto, e ogni tanto un cliente scrive in chat con una missione "urgentissima".
+A top-down shooter where the enemies are the **open bugs in your backlog**. Every sprint is a project, every boss is that project's worst ticket, and every now and then a client pops into the chat with a "super urgent" mission.
 
 ```sh
 pnpm install
 pnpm dev        # http://127.0.0.1:5199
-pnpm check      # typecheck + oxlint (regole Ritmo) + ritmo-devtools lint + test headless
-pnpm build && pnpm serve   # produzione: gioco + server delle run su un'unica porta (PORT, default 8080)
+pnpm check      # typecheck + oxlint (Ritmo rules) + ritmo-devtools lint + headless tests
+pnpm build && pnpm serve   # production: game + run server on a single port (PORT, default 8080)
 ```
 
-`?tutti` nell'URL sblocca tutti gli sprint per la sessione.
+`?tutti` in the URL unlocks every sprint for the session.
 
-## Come si gioca
+## How to play
 
-| Comando | Azione |
+| Control | Action |
 |---|---|
-| WASD / frecce | muoviti |
-| Mouse (tieni premuto) | mira e spara |
-| Spazio / Shift | dash (invulnerabile per un attimo) |
-| Q / E / tasto destro | `git reset --hard`: ripulisce lo schermo |
-| P / Esc | pausa |
+| WASD / arrows | move |
+| Mouse (hold) | aim and shoot |
+| Space / Shift | dash (briefly invulnerable) |
+| Q / E / right button | `git reset --hard`: clears the screen |
+| P / Esc | pause |
 | M | audio on/off |
 
-Passa il mirino su un bug per leggere il ticket.
+Hover the crosshair over a bug to read its ticket.
 
-- **Priorità → tipo di nemico.** Lowest/Low sono deboli, High sono veloci, Highest sono carri armati che alla morte generano 3 regressioni.
-- **Stato → comportamento.** *Blocked/On hold* hanno lo scudo (danni dimezzati), *Ready for QA/UAT/review* possono riaprirsi (`REOPENED`), *In development* si muovono a scatti.
-- **Sprint.** Glacier → Side Quests (sette progettini) → Keystone → Foundry. Progetti, chiavi e ticket sono inventati (`src/content/backlog.ts`).
-- **Boss.** `GLC-37` il dispenser che non si ferma se non per timeout, `QUIZ-276` il crash che riparte altrove, `KEY-3242` la 2FA che vuole un secondo fattore, `FND-2245` `TypeError: Cannot read properties of undefined`.
-- **Clienti** (inventati): Ugo scrive TUTTO IN MAIUSCOLO!!!, Ornella "come da mail precedente", Kevin ti manda vocali, Samanta "già che ci sei", Gualtiero "in staging funzionava". Missione riuscita: story points e un power-up. Missione fallita: scope creep, nuovi bug `ESC-*` in arena.
-- **Bug resuscitati.** Ogni tanto un cliente giura che un bug che hai chiuso "non è ancora fixato": torna in arena come zombie 🧟 (più resistente, sparisce dalle release notes finché non lo richiudi) e il cliente se la ride in chat dicendoti di lavorare più duramente.
-- **Tobia** (Tech Lead) passa quando sei lento (troppo tempo senza chiudere bug, o bug che si accumulano) e chiede "stai usando gli _strumenti_??". Poi te li lascia accanto: 🤖 Strumenti, colpi a ricerca automatica.
-- **Power-up:** 🔥 Hotfix, 🔀 Refactor, ☕ Caffè, 🛡️ Test verdi, ⏪ git reset, 🍕 Pizza, 🤖 Strumenti (solo da Tobia), 🧠 AI.
-- A fine sprint: release notes con i ticket chiusi, copiabili in Markdown.
-- **Endless:** la card ∞ sotto gli sprint. Tutti i bug aperti di tutti i progetti, pescati a caso e per sempre; ogni 6 ondate arriva uno dei quattro boss, a rotazione, e ogni boss battuto rende il round successivo più duro (bug più resistenti e veloci, ondate più grandi e ravvicinate). Finisce solo quando crolli; il record resta nel menu.
-- **Call bonus:** ogni tanto un cliente ti chiama. Su Meet compare una stanza nell'arena: restaci dentro 5 secondi. Su Slack i suoi messaggi galleggiano nell'arena: vai a leggerli tutti. Rispondere vale story points e un power-up; ignorare non costa niente, solo un messaggio passivo-aggressivo. Una freccia indica dove andare se è fuori schermo.
-- **Minimappa:** tutta l'arena in un riquadro, in alto a destra sotto gli story points (su telefono in basso al centro, tra i pollici): bug col colore della priorità, boss, power-up, la call da rispondere, il ticket bloccante della missione che lampeggia e il rettangolo di ciò che vedi.
-- **AI:** il drop più raro. Raccolto, piazza sul posto una torretta che per 12 secondi spara da sola al bug più vicino (i punti vanno a chi l'ha raccolta). Ogni tanto ha un'allucinazione e spara al nulla.
-- **Gioca in squadra:** fino a 4 sviluppatori sullo stesso backlog. Dal menu si sceglie un nome (resta salvato) e si crea una run, che ha un codice tipo `RUN-4821` e un link `?run=RUN-4821` da girare ai colleghi, oppure si entra con il codice. Nella lobby l'host sceglie lo sprint e lo fa partire. Ognuno ha il suo colore e il nome sopra la testa; i bug inseguono chi è più vicino, ondate e boss crescono col numero di giocatori. Chi va in burnout resta a terra finché un collega non gli sta vicino per qualche secondo; si perde quando sono a terra tutti. A fine run c'è la classifica del team e l'host fa partire la successiva. Chi cade dalla connessione rientra nel suo posto con lo stesso nome. Il giocatore singolo non cambia e non usa il server.
-- **Musica:** un loop 8-bit originale in stile anni 80 (due canali pulse, basso triangolare, batteria a rumore), sintetizzato in WebAudio. Nel menu c'è un brano tranquillo (parte al primo tocco o tasto, come vogliono i browser); in partita il loop accelera col boss e si ferma in pausa; M lo spegne insieme agli effetti.
-- **Mobile:** su touch compaiono due stick virtuali. Il sinistro muove; il destro mira e spara, con mira assistita, e se lo tieni fermo spara al bug più vicino. Ci sono anche i pulsanti DASH e ⏪ `git reset --hard`, più pausa e audio in alto. La chat si compatta e in verticale il gioco chiede di ruotare il telefono. Su Android (e iPad) avviare uno sprint passa a schermo intero bloccato in orizzontale, con il pulsante ⛶ per uscire; su iPhone, che non lo permette, il menu suggerisce "Aggiungi alla schermata Home" (il manifest apre il gioco a schermo intero).
-- **Lingue:** inglese (default) e italiano, dal selettore EN/IT nel menu o con `?lang=it`; la scelta resta salvata. I titoli dei bug sono in inglese in entrambe le lingue, come in un backlog vero.
+- **Priority → enemy type.** Lowest/Low are weak, High are fast, Highest are tanks that spawn 3 regressions when they die.
+- **Status → behaviour.** *Blocked/On hold* are shielded (half damage), *Ready for QA/UAT/review* may reopen (`REOPENED`), *In development* move erratically.
+- **Sprints.** Glacier → Side Quests (seven small projects) → Keystone → Foundry. Projects, keys and tickets are made up (`src/content/backlog.ts`).
+- **Bosses.** `GLC-37` the dispenser that only stops on a timeout, `QUIZ-276` the crash that restarts somewhere else, `KEY-3242` the 2FA that wants a second factor, `FND-2245` `TypeError: Cannot read properties of undefined`.
+- **Clients** (made up): Ugo WRITES EVERYTHING IN CAPS!!!, Ornella is "following up on my previous email", Kevin sends you voice notes, Samanta asks "while you're at it", Gualtiero says "it worked on staging". A mission completed earns story points and a power-up. A mission failed means scope creep: new `ESC-*` bugs in the arena.
+- **Resurrected bugs.** Every now and then a client swears a bug you closed "is not fixed yet": it comes back to the arena as a zombie 🧟 (tougher, and missing from the release notes until you close it again) while the client laughs in the chat and tells you to work harder.
+- **Tobia** (Tech Lead) shows up when you're slow (too long without closing a bug, or bugs piling up) and asks "are you using the _tools_??", then leaves them next to you: 🤖 Tools, homing shots.
+- **Power-ups:** 🔥 Hotfix, 🔀 Refactor, ☕ Coffee, 🛡️ Green tests, ⏪ git reset, 🍕 Pizza, 🤖 Tools (from Tobia only), 🧠 AI.
+- At the end of a sprint: release notes with the closed tickets, copyable as Markdown.
+- **Endless:** the ∞ card below the sprints. Every open bug from every project, picked at random, forever; every 6 waves one of the four bosses arrives, in rotation, and every boss beaten makes the next round harder (tougher, faster bugs, bigger waves closer together). It only ends when you burn out; your record stays in the menu.
+- **Bonus calls:** every now and then a client calls you. On Meet a room appears in the arena: stay inside it for 5 seconds. On Slack their messages float around the arena: go read them all. Answering earns story points and a power-up; ignoring costs nothing but a passive-aggressive message. An arrow points the way when it's off screen.
+- **Minimap:** the whole arena in a box, top right below the story points (bottom centre on phones, between the thumbs): bugs in their priority colour, bosses, power-ups, the call to answer, the mission's blocker ticket blinking, and a rectangle for what you can see.
+- **AI:** the rarest drop. Once picked up, it places a turret on the spot that shoots the nearest bug on its own for 12 seconds (the points go to whoever picked it up). Every now and then it hallucinates and shoots at nothing.
+- **Play together:** up to 4 developers on the same backlog. In the menu you pick a name (it stays saved) and create a run, which gets a code like `RUN-4821` and a `?run=RUN-4821` link to send your teammates, or you join one with its code. In the lobby the host picks the sprint and starts it. Everyone has their own colour and their name above their head; bugs chase whoever is closest, and waves and bosses scale with the number of players. Whoever burns out stays down until a teammate stands next to them for a few seconds; you lose when everyone is down. At the end of the run there's the team leaderboard and the host starts the next one. If you drop your connection, you rejoin in your own seat with the same name. Single player is unchanged and doesn't use the server.
+- **Music:** an original 80s-style 8-bit loop (two pulse channels, triangle bass, noise drums), synthesized with WebAudio. The menu has a calm track (it starts on the first tap or key press, as browsers require); in game the loop speeds up for the boss and stops while paused; M mutes it along with the sound effects.
+- **Mobile:** on touch devices two virtual sticks appear. The left one moves; the right one aims and shoots, with aim assist, and held still it shoots the nearest bug. There are also DASH and ⏪ `git reset --hard` buttons, plus pause and audio at the top. The chat gets compact, and in portrait the game asks you to rotate the phone. On Android (and iPad) starting a sprint switches to fullscreen locked in landscape, with a ⛶ button to exit; on iPhone, which doesn't allow it, the menu suggests "Add to Home Screen" (the manifest opens the game fullscreen).
+- **Languages:** English (default) and Italian, from the EN/IT switch in the menu or with `?lang=it`; the choice stays saved. Bug titles are in English in both languages, like in a real backlog.
 
-## Architettura
+## Architecture
 
-La simulazione è un ECS [Ritmo](https://github.com/typeonce-dev/ritmo) a passo fisso (60 Hz), deterministica e headless; il browser è solo un host.
+The simulation is a fixed-step (60 Hz) [Ritmo](https://github.com/typeonce-dev/ritmo) ECS, deterministic and headless; the browser is just a host.
 
-- `src/sim/` — schema (componenti, risorse, eventi), sistemi (`player`, `waves`, `movement`, `boss`, `combat`, `missions`, `interruptions`), schedule, e l'inspector `View` che il renderer legge. Casualità solo da `Random` seedato, trigonometria da `Ops`: stesso seed + stesso input = stessa partita.
-- `src/content/` — dati: il backlog inventato, livelli, clienti. Tabelle chiuse con `satisfies Record<...>`. Tutti i testi stanno in `src/content/text/{en,it}.ts`, tipizzati da `Strings` in `i18n.ts`; la simulazione legge la lingua dalla risorsa `Language`, fissa per tutto il livello.
-- `src/host/` — input (tastiera + mouse + stick touch → intenti), renderer Canvas 2D, chat dei clienti (DOM), audio sintetizzato WebAudio (effetti in `audio.ts`, musica nel sequencer di `music.ts`).
-- `src/net/protocol.ts` — i messaggi tra browser e server delle run (JSON su WebSocket, path `/runs`), con la validazione di tutto ciò che arriva dal browser.
-- `src/server/` — le run in multiplayer: `rooms.ts` (stanze, lobby, nomi, la simulazione di ogni run, senza rete), `socket.ts` (WebSocket con `ws` su qualsiasi server HTTP Node), `main.ts` (server di produzione). In sviluppo il plugin in `vite.config.ts` attacca le run al dev server stesso: `pnpm dev` basta.
-- Il server è autoritativo: fa girare la stessa simulazione a 60 Hz e manda la vista a 30 Hz; i browser mandano solo l'input e disegnano interpolando tra due frame (`src/host/net.ts`).
-- `test/simulation.test.ts` — un autopilota gioca i livelli headless con gli stessi intenti di un giocatore, anche in squadra. `test/rooms.test.ts` — le stanze con browser finti.
+- `src/sim/` — schema (components, resources, events), systems (`player`, `waves`, `movement`, `boss`, `combat`, `missions`, `interruptions`), schedule, and the `View` inspector the renderer reads. Randomness only from the seeded `Random`, trigonometry from `Ops`: same seed + same input = same game.
+- `src/content/` — data: the made-up backlog, levels, clients. Closed tables with `satisfies Record<...>`. All text lives in `src/content/text/{en,it}.ts`, typed by `Strings` in `i18n.ts`; the simulation reads the language from the `Language` resource, fixed for the whole level.
+- `src/host/` — input (keyboard + mouse + touch sticks → intents), Canvas 2D renderer, client chat (DOM), WebAudio-synthesized audio (sound effects in `audio.ts`, music in the `music.ts` sequencer).
+- `src/net/protocol.ts` — the messages between the browser and the run server (JSON over WebSocket, path `/runs`), with validation of everything that comes from the browser.
+- `src/server/` — multiplayer runs: `rooms.ts` (rooms, lobby, names, each run's simulation, no networking), `socket.ts` (WebSocket with `ws` on any Node HTTP server), `main.ts` (production server). In development the plugin in `vite.config.ts` attaches runs to the dev server itself: `pnpm dev` is all you need.
+- The server is authoritative: it runs the same simulation at 60 Hz and sends the view at 30 Hz; browsers only send input and draw by interpolating between two frames (`src/host/net.ts`).
+- `test/simulation.test.ts` — an autopilot plays the levels headless with the same intents as a player, in teams too. `test/rooms.test.ts` — the rooms with fake browsers.
