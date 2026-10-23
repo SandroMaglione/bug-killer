@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icon-32.png" />
+    <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#05060a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Bug Killer</title>
+    <!-- Until the stylesheet arrives: just the dark background, not the unstyled rotate prompt. -->
+    <style>
+      html, body { margin: 0; background: #05060a; }
+      .rotate { display: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <aside id="chat" hidden></aside>
+    <div id="touch" hidden></div>
+    <div class="rotate" aria-live="polite"><span>📱↻</span><p id="rotate-text"></p></div>
+    <div id="overlay" class="overlay" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

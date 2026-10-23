@@ -1,0 +1,1129 @@
+import { bugKinds } from "../content/bugs.ts"
+import type { Level } from "../content/levels.ts"
+import { clients } from "../content/clients.ts"
+import { comboMultiplier } from "../sim/systems/combat.ts"
+import { ARENA, BUFF_SECONDS, PARTY, PLAYER, TURRET } from "../sim/constants.ts"
+import type { FxValue, PickupKind, Vec } from "../sim/schema.ts"
+import type { View } from "../sim/simulation.ts"
+import { formatNumber, locale, t } from "./language.ts"
+import { touchMode } from "./touch.ts"
+
+const MONO = `"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace`
+const SANS = `"Inter", ui-sans-serif, system-ui, -apple-system, sans-serif`
+
+const pickupIcons = {
+  hotfix: "🔥",
+  refactor: "🔀",
+  coffee: "☕",
+  unitTest: "🛡️",
+  revert: "⏪",
+  pizza: "🍕",
+  tools: "🤖",
+  ai: "🧠"
+} as const satisfies Record<PickupKind, string>
+
+export const pickupInfo = (kind: PickupKind) => ({ icon: pickupIcons[kind], ...t().pickups[kind] })
+
+const codeLines = [
+  "if (user == null) return;",
+  "// TODO: fix before release",
+  "catch (e) { /* ignore */ }",
+  "const id = order?.id ?? order.id",
+  "await sleep(5000) // race condition",
+  "SELECT * FROM machines;",
+  "git push --force",
+  "z-index: 99999 !important;",
+  "setTimeout(fix, 0)",
+  "return undefined as any",
+  "npm install --legacy-peer-deps",
+  "rm -rf node_modules && npm i",
+  "it.skip('works on staging')",
+  "@ts-ignore",
+  "while (true) { retry() }",
+  "date.getTimezoneOffset() // ???"
+]
+
+interface Particle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  max: number
+  color: string
+  size: number
+  text?: string
+}
+
+interface Floater {
+  x: number
+  y: number
+  life: number
+  max: number
+  text: string
+  sub: string
+  color: string
+  big: boolean
+}
+
+export interface Camera {
+  x: number
+  y: number
+  scale: number
+}
+
+export const makeRenderer = (canvas: HTMLCanvasElement) => {
+  const ctx = canvas.getContext("2d")!
+  const camera: Camera = { x: 0, y: 0, scale: 1 }
+  const particles: Array<Particle> = []
+  const floaters: Array<Floater> = []
+  let shake = 0
+  let flash = 0
+  let floor: HTMLCanvasElement | null = null
+  let floorLevel = ""
+  let banner: { title: string; subtitle: string; color: string; life: number; max: number } | null = null
+  let time = 0
+  const trail: Array<{ x: number; y: number; life: number }> = []
+
+  const resize = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    canvas.width = Math.floor(canvas.clientWidth * dpr)
+    canvas.height = Math.floor(canvas.clientHeight * dpr)
+  }
+  resize()
+  window.addEventListener("resize", resize)
+
+  const toWorld = (screen: Vec): Vec => ({ x: camera.x + screen.x / camera.scale, y: camera.y + screen.y / camera.scale })
+  const toScreen = (world: Vec): Vec => ({ x: (world.x - camera.x) * camera.scale, y: (world.y - camera.y) * camera.scale })
+
+  const buildFloor = (level: Level) => {
+    const c = document.createElement("canvas")
+    c.width = ARENA.width
+    c.height = ARENA.height
+    const g = c.getContext("2d")!
+    g.fillStyle = level.theme.background
+    g.fillRect(0, 0, ARENA.width, ARENA.height)
+    g.strokeStyle = level.theme.grid
+    g.lineWidth = 1
+    for (let x = 0; x <= ARENA.width; x += 60) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ARENA.height); g.stroke()
+    }
+    for (let y = 0; y <= ARENA.height; y += 60) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(ARENA.width, y); g.stroke()
+    }
+    // Faded code on the floor: the codebase you are standing on.
+    g.font = `16px ${MONO}`
+    g.fillStyle = level.theme.grid
+    let seed = level.id.length * 97
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+    for (let i = 0; i < 90; i++) {
+      g.globalAlpha = 0.35 + rand() * 0.35
+      const lines = [...codeLines, ...t().floorCode]
+      const line = lines[Math.floor(rand() * lines.length)] ?? ""
+      g.fillText(`${String(Math.floor(rand() * 900) + 10).padStart(4, " ")}  ${line}`, rand() * (ARENA.width - 300), 30 + rand() * (ARENA.height - 40))
+    }
+    g.globalAlpha = 1
+    g.strokeStyle = level.theme.accent
+    g.lineWidth = 4
+    g.shadowColor = level.theme.accent
+    g.shadowBlur = 20
+    g.strokeRect(2, 2, ARENA.width - 4, ARENA.height - 4)
+    floor = c
+    floorLevel = `${level.id}:${locale()}`
+  }
+
+  const burst = (x: number, y: number, color: string, count: number, speed: number, size = 3) => {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2
+      const s = speed * (0.3 + Math.random())
+      const life = 0.3 + Math.random() * 0.5
+      particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, color, size: size * (0.5 + Math.random()) })
+    }
+  }
+
+  const fx = (event: FxValue) => {
+    switch (event.type) {
+      case "kill":
+        burst(event.x, event.y, event.color, event.boss ? 120 : 22, event.boss ? 520 : 240, event.boss ? 6 : 3)
+        burst(event.x, event.y, "#ffffff", event.boss ? 40 : 6, 160, 2)
+        if (event.summary) {
+          floaters.push({ x: event.x, y: event.y - 20, life: event.boss ? 3 : 1.6, max: event.boss ? 3 : 1.6, text: `✔ ${event.key}`, sub: event.summary, color: event.color, big: event.boss })
+        }
+        floaters.push({ x: event.x + 24, y: event.y + 6, life: 0.9, max: 0.9, text: `+${event.points}`, sub: "", color: "#ffffff", big: false })
+        shake = Math.max(shake, event.boss ? 26 : 4)
+        if (event.boss) {
+          flash = 1
+          banner = { title: t().hud.bossFixed, subtitle: t().hud.movedToDone(event.key), color: event.color, life: 3, max: 3 }
+        }
+        break
+      case "hit":
+        burst(event.x, event.y, event.color, 4, 120, 2)
+        break
+      case "hurt":
+        shake = Math.max(shake, 14)
+        flash = Math.max(flash, 0.5)
+        burst(event.x, event.y, "#ff4d6d", 18, 260, 3)
+        break
+      case "bomb":
+        shake = Math.max(shake, 22)
+        flash = 0.9
+        for (let i = 0; i < 80; i++) {
+          const a = (i / 80) * Math.PI * 2
+          particles.push({ x: event.x, y: event.y, vx: Math.cos(a) * 900, vy: Math.sin(a) * 900, life: 0.5, max: 0.5, color: "#ffffff", size: 4 })
+        }
+        floaters.push({ x: event.x, y: event.y - 40, life: 1.4, max: 1.4, text: "git reset --hard", sub: "", color: "#ffffff", big: true })
+        break
+      case "pickup": {
+        const info = pickupInfo(event.kind)
+        floaters.push({ x: event.x, y: event.y - 20, life: 1.3, max: 1.3, text: `${info.icon} ${info.label}`, sub: info.hint, color: "#9dffb0", big: false })
+        burst(event.x, event.y, "#9dffb0", 16, 200, 3)
+        break
+      }
+      case "reopen":
+        floaters.push({ x: event.x, y: event.y - 24, life: 1.6, max: 1.6, text: "REOPENED", sub: t().hud.reopenedSub(event.key), color: "#ff4d6d", big: false })
+        burst(event.x, event.y, "#ff4d6d", 14, 180, 3)
+        break
+      case "resurrect":
+        floaters.push({ x: event.x, y: event.y - 30, life: 2.6, max: 2.6, text: t().hud.resurrected(event.key), sub: t().hud.resurrectedSub(clients[event.client].name), color: "#9dff6b", big: true })
+        burst(event.x, event.y, "#9dff6b", 40, 260, 4)
+        shake = Math.max(shake, 8)
+        break
+      case "dash":
+        burst(event.x, event.y, "#7fdcff", 10, 140, 2)
+        break
+      case "spawn":
+        burst(event.x, event.y, "#ffffff", 8, 90, 2)
+        break
+      case "teleport":
+        burst(event.x, event.y, "#c6ff6b", 30, 300, 3)
+        break
+      case "bossPhase":
+        floaters.push({ x: event.x, y: event.y - 80, life: 2, max: 2, text: event.text, sub: "", color: "#ffffff", big: true })
+        shake = Math.max(shake, 10)
+        break
+      case "ping":
+        floaters.push({ x: event.x, y: event.y - 20, life: 1.2, max: 1.2, text: `✔✔ ${event.text}`, sub: "", color: "#7fb8ff", big: false })
+        burst(event.x, event.y, "#7fb8ff", 14, 180, 3)
+        break
+      case "callDone":
+        floaters.push({ x: event.x, y: event.y - 50, life: 2, max: 2, text: t().calls.answered(event.points), sub: t().calls.kinds[event.kind], color: "#ffd84a", big: true })
+        burst(event.x, event.y, "#ffd84a", 36, 280, 4)
+        break
+      case "down":
+        floaters.push({ x: event.x, y: event.y - 40, life: 2.4, max: 2.4, text: t().hud.teammateDown(event.name), sub: t().hud.teammateDownSub, color: "#ff9440", big: true })
+        burst(event.x, event.y, "#ff9440", 30, 220, 4)
+        break
+      case "revived":
+        floaters.push({ x: event.x, y: event.y - 40, life: 2, max: 2, text: t().hud.revived(event.name), sub: "", color: "#9dffb0", big: true })
+        burst(event.x, event.y, "#9dffb0", 30, 260, 4)
+        break
+      case "turret":
+        // The pickup already says what it is: the turret just powers up.
+        burst(event.x, event.y, "#7fdcff", 26, 220, 3)
+        break
+      case "hallucination":
+        floaters.push({ x: event.x, y: event.y - 30, life: 1.2, max: 1.2, text: t().hud.hallucination, sub: "", color: "#c792ff", big: false })
+        break
+      case "shoot":
+        break
+    }
+  }
+
+  const showBanner = (title: string, subtitle: string, color: string, seconds = 3) => {
+    banner = { title, subtitle, color, life: seconds, max: seconds }
+  }
+
+  // --- Drawing helpers ----------------------------------------------------
+
+  const drawBug = (x: number, y: number, r: number, color: string, heading: number, t: number, options: { flash: number; trait: string; reopened: boolean; boss?: boolean }) => {
+    ctx.save()
+    ctx.translate(x, y)
+    if (options.trait === "jittery" && Math.sin(t * 40) > 0.6) {
+      // Glitchy RGB split for bugs that are "In development".
+      ctx.globalAlpha = 0.5
+      ctx.fillStyle = "#ff00ff"
+      ctx.beginPath(); ctx.ellipse(-3, 0, r * 0.8, r * 0.6, heading, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = "#00ffff"
+      ctx.beginPath(); ctx.ellipse(3, 0, r * 0.8, r * 0.6, heading, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.rotate(heading)
+    const legSwing = Math.sin(t * 18) * 0.35
+    ctx.strokeStyle = shade(color, -0.25)
+    ctx.lineWidth = Math.max(2, r * 0.12)
+    ctx.lineCap = "round"
+    for (let i = -1; i <= 1; i++) {
+      for (const side of [-1, 1]) {
+        const swing = (i % 2 === 0 ? legSwing : -legSwing) * side
+        ctx.beginPath()
+        ctx.moveTo(i * r * 0.4, side * r * 0.3)
+        ctx.lineTo(i * r * 0.5 + Math.cos(swing) * r * 0.2, side * (r * 0.95 + Math.sin(swing) * r * 0.15))
+        ctx.lineTo(i * r * 0.7 + r * 0.15, side * r * 1.2)
+        ctx.stroke()
+      }
+    }
+    // Antennae
+    ctx.lineWidth = Math.max(1.5, r * 0.07)
+    for (const side of [-1, 1]) {
+      ctx.beginPath()
+      ctx.moveTo(r * 0.75, side * r * 0.15)
+      ctx.quadraticCurveTo(r * 1.2, side * r * 0.3, r * 1.35, side * (r * 0.55 + Math.sin(t * 6) * r * 0.08))
+      ctx.stroke()
+    }
+    // Abdomen and head
+    ctx.shadowColor = color
+    ctx.shadowBlur = options.boss ? 30 : 12
+    ctx.fillStyle = options.flash > 0 ? "#ffffff" : color
+    ctx.beginPath(); ctx.ellipse(-r * 0.15, 0, r * 0.85, r * 0.68, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.fillStyle = options.flash > 0 ? "#ffffff" : shade(color, -0.35)
+    ctx.beginPath(); ctx.arc(r * 0.68, 0, r * 0.36, 0, Math.PI * 2); ctx.fill()
+    // Wing split and spots
+    ctx.strokeStyle = shade(color, -0.5)
+    ctx.lineWidth = Math.max(1.5, r * 0.06)
+    ctx.beginPath(); ctx.moveTo(r * 0.45, 0); ctx.lineTo(-r * 0.95, 0); ctx.stroke()
+    ctx.fillStyle = shade(color, -0.45)
+    for (const [sx, sy] of [[-0.45, 0.32], [-0.1, -0.35], [0.15, 0.3], [-0.6, -0.25]] as const) {
+      ctx.beginPath(); ctx.arc(sx * r, sy * r, r * 0.11, 0, Math.PI * 2); ctx.fill()
+    }
+    // Eyes
+    ctx.fillStyle = options.reopened ? "#ff2040" : "#ffffff"
+    ctx.beginPath(); ctx.arc(r * 0.85, -r * 0.14, r * 0.1, 0, Math.PI * 2); ctx.arc(r * 0.85, r * 0.14, r * 0.1, 0, Math.PI * 2); ctx.fill()
+    if (options.trait === "armored") {
+      ctx.strokeStyle = "#c8d0dc"
+      ctx.lineWidth = 3
+      ctx.setLineDash([6, 4])
+      ctx.beginPath(); ctx.ellipse(-r * 0.15, 0, r * 0.95, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke()
+      ctx.setLineDash([])
+    }
+    ctx.restore()
+    if (options.trait === "armored") {
+      ctx.font = `${Math.round(r * 0.7)}px ${SANS}`
+      ctx.textAlign = "center"
+      ctx.fillText("🔒", x, y + r * 0.25)
+    }
+    if (options.trait === "reopens") {
+      ctx.strokeStyle = "rgba(255,255,255,0.35)"
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([3, 5])
+      ctx.beginPath(); ctx.arc(x, y, r * 1.35, t * 2, t * 2 + Math.PI * 1.6); ctx.stroke()
+      ctx.setLineDash([])
+    }
+  }
+
+  /** A developer in burnout: lying down, greyed out, with the revive filling up around them. */
+  const drawDown = (view: NonNullable<View["player"]>) => {
+    const { x, y } = view.position
+    ctx.save()
+    ctx.globalAlpha = 0.55
+    ctx.fillStyle = "#6b7280"
+    ctx.beginPath(); ctx.ellipse(x, y, PLAYER.radius * 1.2, PLAYER.radius * 0.8, 0.3, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = "#f2c9a0"
+    ctx.beginPath(); ctx.arc(x + 12, y - 4, 7, 0, Math.PI * 2); ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.font = `18px ${SANS}`
+    ctx.textAlign = "center"
+    ctx.fillText("🔥", x, y - 24 + Math.sin(time * 6) * 2)
+    ctx.strokeStyle = "rgba(255,255,255,0.15)"
+    ctx.lineWidth = 4
+    ctx.beginPath(); ctx.arc(x, y, PARTY.reviveRadius, 0, Math.PI * 2); ctx.stroke()
+    if (view.revive > 0) {
+      ctx.strokeStyle = "#9dffb0"
+      ctx.beginPath(); ctx.arc(x, y, PARTY.reviveRadius, -Math.PI / 2, -Math.PI / 2 + (view.revive / PARTY.reviveSeconds) * Math.PI * 2); ctx.stroke()
+    }
+    ctx.restore()
+    label(`${t().hud.burnout} · ${view.name}`, x, y + PLAYER.radius + 22, "#ff9440", 10)
+  }
+
+  const drawPlayer = (view: NonNullable<View["player"]>, named: boolean) => {
+    if (view.hp <= 0 && named) {
+      drawDown(view)
+      return
+    }
+    const { x, y } = view.position
+    const aim = Math.atan2(view.aim.y - y, view.aim.x - x)
+    const blinking = view.invulnerable > 0 && view.buffs.unitTest <= 0 && Math.floor(time * 20) % 2 === 0
+    if (view.dashTime > 0 || view.buffs.coffee > 0) trail.push({ x, y, life: 0.25 })
+    for (const t of trail) {
+      ctx.globalAlpha = (t.life / 0.25) * 0.35
+      ctx.fillStyle = "#7fdcff"
+      ctx.beginPath(); ctx.arc(t.x, t.y, PLAYER.radius, 0, Math.PI * 2); ctx.fill()
+    }
+    ctx.globalAlpha = blinking ? 0.35 : 1
+    ctx.save()
+    ctx.translate(x, y)
+    // Shadow
+    ctx.fillStyle = "rgba(0,0,0,0.35)"
+    ctx.beginPath(); ctx.ellipse(3, 6, 18, 12, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.rotate(aim)
+    // Laptop-gun
+    ctx.fillStyle = "#2b2f3a"
+    ctx.fillRect(8, -5, 22, 10)
+    ctx.fillStyle = view.buffs.hotfix > 0 ? "#ff9440" : "#7fdcff"
+    ctx.shadowColor = ctx.fillStyle
+    ctx.shadowBlur = 12
+    ctx.fillRect(26, -3, 6, 6)
+    ctx.shadowBlur = 0
+    // Hoodie, in the developer's colour.
+    ctx.fillStyle = view.color
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER.radius, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = shade(view.color, -0.2)
+    ctx.beginPath(); ctx.arc(-4, 0, PLAYER.radius * 0.75, Math.PI * 0.5, Math.PI * 1.5); ctx.fill()
+    // Head and headphones
+    ctx.fillStyle = "#f2c9a0"
+    ctx.beginPath(); ctx.arc(2, 0, 8, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = "#3b2a20"
+    ctx.beginPath(); ctx.arc(0, 0, 8.5, Math.PI * 0.55, Math.PI * 1.45); ctx.fill()
+    ctx.strokeStyle = "#111"
+    ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(1, 0, 10, -Math.PI * 0.5, Math.PI * 0.5, true); ctx.stroke()
+    ctx.fillStyle = "#ff4d6d"
+    ctx.fillRect(-2, -12, 6, 5); ctx.fillRect(-2, 7, 6, 5)
+    ctx.restore()
+    ctx.globalAlpha = 1
+    if (view.buffs.unitTest > 0) {
+      ctx.strokeStyle = "#58e6a0"
+      ctx.lineWidth = 3
+      ctx.shadowColor = "#58e6a0"
+      ctx.shadowBlur = 16
+      ctx.beginPath()
+      for (let i = 0; i <= 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + time
+        const px = x + Math.cos(a) * 30
+        const py = y + Math.sin(a) * 30
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.font = `bold 11px ${MONO}`
+      ctx.fillStyle = "#58e6a0"
+      ctx.textAlign = "center"
+      ctx.fillText(t().hud.testsPassing, x, y - 38)
+    }
+    if (named) label(view.name, x, y - PLAYER.radius - 14, view.color, 10)
+  }
+
+  /** The bonus call in the arena: the Meet room to stand in, or the Slack messages to go read. */
+  const drawCall = (view: View) => {
+    const call = view.calls.active
+    if (!call) return
+    const color = clients[call.client].color
+    const fading = call.timeLeft < 4 && Math.floor(time * 6) % 2 === 0
+    ctx.globalAlpha = fading ? 0.45 : 1
+    if (call.kind === "meet") {
+      const { x, y } = call.room
+      const r = call.radius
+      const inside = view.player !== null && (view.player.position.x - x) ** 2 + (view.player.position.y - y) ** 2 <= r * r
+      const glow = ctx.createRadialGradient(x, y, r * 0.2, x, y, r)
+      glow.addColorStop(0, shade(color, -0.55))
+      glow.addColorStop(1, shade(color, -0.75))
+      ctx.globalAlpha *= inside ? 0.75 : 0.5
+      ctx.fillStyle = glow
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = fading ? 0.45 : 1
+      ctx.strokeStyle = color
+      ctx.lineWidth = 3
+      ctx.shadowColor = color
+      ctx.shadowBlur = inside ? 24 : 12
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.lineWidth = 2
+      ctx.setLineDash([10, 8])
+      ctx.beginPath(); ctx.arc(x, y, r + 10 + Math.sin(time * 4) * 3, time * 0.6, time * 0.6 + Math.PI * 2); ctx.stroke()
+      ctx.setLineDash([])
+      // How long you have sat in the meeting.
+      ctx.lineWidth = 7
+      ctx.strokeStyle = "#ffd84a"
+      ctx.beginPath(); ctx.arc(x, y, r - 8, -Math.PI / 2, -Math.PI / 2 + (call.progress / call.goal) * Math.PI * 2); ctx.stroke()
+      ctx.font = `34px ${SANS}`
+      ctx.textAlign = "center"
+      ctx.fillText("📹", x, y + 12 + Math.sin(time * 3) * 3)
+      label(`${t().calls.room} · ${clients[call.client].name}`, x, y - r - 14, color, 12)
+      label(truncate(call.title, 40), x, y + r + 22, "#e8ecf4", 11)
+    } else {
+      for (const [i, ping] of call.pings.entries()) {
+        const bob = Math.sin(time * 4 + i * 2) * 4
+        const y = ping.y + bob
+        ctx.font = `bold 12px ${SANS}`
+        ctx.textAlign = "left"
+        const w = ctx.measureText(ping.text).width + 40
+        const left = ping.x - w / 2
+        ctx.shadowColor = "#7fb8ff"
+        ctx.shadowBlur = 14
+        ctx.fillStyle = "rgba(20,28,48,0.95)"
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2
+        roundRect(ctx, left, y - 16, w, 32, 10)
+        ctx.fill(); ctx.stroke()
+        ctx.shadowBlur = 0
+        ctx.beginPath(); ctx.moveTo(ping.x - 6, y + 16); ctx.lineTo(ping.x, y + 25); ctx.lineTo(ping.x + 6, y + 16); ctx.closePath()
+        ctx.fillStyle = color; ctx.fill()
+        ctx.font = `14px ${SANS}`
+        ctx.fillText("💬", left + 8, y + 5)
+        ctx.font = `bold 12px ${SANS}`
+        ctx.fillStyle = "#e8ecf4"
+        ctx.fillText(ping.text, left + 30, y + 4)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  const drawBoss = (boss: View["bosses"][number]) => {
+    const { x, y } = boss.position
+    const heading = Math.atan2(boss.position.y - (boss.position.y - 1), 0) + Math.sin(boss.age) * 0.2 + Math.PI / 2
+    if (boss.pattern === "crash" && Math.sin(time * 30) > 0.7) {
+      ctx.save()
+      ctx.globalAlpha = 0.4
+      ctx.translate(Math.random() * 10 - 5, 0)
+      drawBug(x, y, boss.radius, "#ff00ff", heading, boss.age, { flash: 0, trait: "plain", reopened: false, boss: true })
+      ctx.restore()
+    }
+    drawBug(x, y, boss.radius, boss.color, heading, boss.age, { flash: boss.hitFlash, trait: "plain", reopened: true, boss: true })
+    if (boss.shield > 0) {
+      ctx.strokeStyle = "rgba(255,255,255,0.8)"
+      ctx.lineWidth = 4
+      ctx.shadowColor = "#ffffff"
+      ctx.shadowBlur = 20
+      ctx.beginPath(); ctx.arc(x, y, boss.radius * 1.35, 0, Math.PI * 2); ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.font = `bold 14px ${MONO}`
+      ctx.fillStyle = "#ffffff"
+      ctx.textAlign = "center"
+      ctx.fillText(boss.pattern === "twoFactor" ? "🔐 OTP ******" : t().hud.booting, x, y - boss.radius * 1.5)
+    }
+    if (boss.pattern === "undefined") {
+      ctx.font = `bold 13px ${MONO}`
+      ctx.fillStyle = "rgba(255,122,89,0.8)"
+      ctx.textAlign = "center"
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + time * 0.8
+        ctx.fillText(i % 2 ? "null" : "undefined", x + Math.cos(a) * boss.radius * 1.6, y + Math.sin(a) * boss.radius * 1.6)
+      }
+    }
+    if (boss.pattern === "twoFactor" && boss.phase === 2) {
+      ctx.font = `bold 13px ${MONO}`
+      ctx.fillStyle = "#c79bff"
+      ctx.textAlign = "center"
+      ctx.fillText(t().hud.factor, x, y + boss.radius * 1.6)
+    }
+    ctx.font = `bold 14px ${MONO}`
+    ctx.fillStyle = "#ffffff"
+    ctx.textAlign = "center"
+    ctx.fillText(boss.key, x, y - boss.radius - 14)
+  }
+
+  const label = (text: string, x: number, y: number, color: string, size = 11) => {
+    ctx.font = `bold ${size}px ${MONO}`
+    ctx.textAlign = "center"
+    const w = ctx.measureText(text).width + 8
+    ctx.fillStyle = "rgba(0,0,0,0.6)"
+    roundRect(ctx, x - w / 2, y - size, w, size + 5, 4)
+    ctx.fill()
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+  }
+
+  // --- Frame ------------------------------------------------------------
+
+  const draw = (view: View, cursor: Vec, dt: number) => {
+    time += dt
+    if (floorLevel !== `${view.level.id}:${locale()}`) buildFloor(view.level)
+    const width = canvas.clientWidth
+    const height = canvas.clientHeight
+    const dpr = canvas.width / Math.max(1, width)
+    camera.scale = Math.max(0.5, Math.min(1.2, Math.min(width / 1150, height / 760)))
+    const viewW = width / camera.scale
+    const viewH = height / camera.scale
+    const focus = view.player?.position ?? { x: ARENA.width / 2, y: ARENA.height / 2 }
+    const targetX = viewW >= ARENA.width ? (ARENA.width - viewW) / 2 : Math.max(0, Math.min(ARENA.width - viewW, focus.x - viewW / 2))
+    const targetY = viewH >= ARENA.height ? (ARENA.height - viewH) / 2 : Math.max(0, Math.min(ARENA.height - viewH, focus.y - viewH / 2))
+    camera.x += (targetX - camera.x) * Math.min(1, dt * 8)
+    camera.y += (targetY - camera.y) * Math.min(1, dt * 8)
+
+    shake = Math.max(0, shake - dt * 60)
+    flash = Math.max(0, flash - dt * 2.5)
+    const sx = (Math.random() - 0.5) * shake
+    const sy = (Math.random() - 0.5) * shake
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.fillStyle = "#05060a"
+    ctx.fillRect(0, 0, width, height)
+    ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale, (-camera.x * camera.scale + sx) * dpr, (-camera.y * camera.scale + sy) * dpr)
+    if (floor) ctx.drawImage(floor, 0, 0)
+
+    const accent = view.level.theme.accent
+    const mission = view.missions.active
+
+    drawCall(view)
+
+    // AI turrets: a little tripod with a barrel tracking its target, and a ring for the time left.
+    for (const turret of view.turrets) {
+      const { x, y } = turret.position
+      const ending = turret.life < 2.5 && Math.floor(time * 8) % 2 === 0
+      ctx.globalAlpha = ending ? 0.5 : 1
+      ctx.strokeStyle = "rgba(127,220,255,0.25)"
+      ctx.lineWidth = 3
+      ctx.beginPath(); ctx.arc(x, y, TURRET.radius + 8, 0, Math.PI * 2); ctx.stroke()
+      ctx.strokeStyle = "#7fdcff"
+      ctx.beginPath(); ctx.arc(x, y, TURRET.radius + 8, -Math.PI / 2, -Math.PI / 2 + (turret.life / TURRET.seconds) * Math.PI * 2); ctx.stroke()
+      ctx.strokeStyle = "#2b2f3a"
+      ctx.lineWidth = 4
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + Math.PI / 2
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 20, y + Math.sin(a) * 20); ctx.stroke()
+      }
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(turret.aim)
+      ctx.fillStyle = "#3a4152"
+      ctx.fillRect(4, -4, 22, 8)
+      ctx.fillStyle = "#7fdcff"
+      ctx.shadowColor = "#7fdcff"
+      ctx.shadowBlur = 10
+      ctx.fillRect(22, -3, 5, 6)
+      ctx.restore()
+      ctx.fillStyle = "#1b2030"
+      ctx.strokeStyle = "#7fdcff"
+      ctx.lineWidth = 2
+      ctx.shadowColor = "#7fdcff"
+      ctx.shadowBlur = 14
+      ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.font = `bold 9px ${MONO}`
+      ctx.textAlign = "center"
+      ctx.fillStyle = "#7fdcff"
+      ctx.fillText("AI", x, y + 3)
+      ctx.globalAlpha = 1
+    }
+
+    // Pickups
+    for (const pickup of view.pickups) {
+      const { x, y } = pickup.position
+      const bob = Math.sin(time * 4 + x) * 3
+      const fading = pickup.life < 3 && Math.floor(time * 8) % 2 === 0
+      if (fading) continue
+      ctx.fillStyle = "rgba(157,255,176,0.15)"
+      ctx.strokeStyle = "#9dffb0"
+      ctx.lineWidth = 2
+      ctx.shadowColor = "#9dffb0"
+      ctx.shadowBlur = 14
+      roundRect(ctx, x - 17, y - 17 + bob, 34, 34, 8)
+      ctx.fill(); ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.font = `20px ${SANS}`
+      ctx.textAlign = "center"
+      ctx.fillText(pickupInfo(pickup.kind).icon, x, y + 7 + bob)
+      ctx.font = `bold 10px ${MONO}`
+      ctx.fillStyle = "#9dffb0"
+      ctx.fillText(pickupInfo(pickup.kind).label, x, y + 32 + bob)
+    }
+
+    // Bugs
+    const aimWorld = toWorld(cursor)
+    let hovered: View["bugs"][number] | null = null
+    let hoveredDistance = 70 ** 2
+    for (const bug of view.bugs) {
+      const { x, y } = bug.position
+      const heading = view.player ? Math.atan2(view.player.position.y - y, view.player.position.x - x) : 0
+      const appear = Math.min(1, bug.age / 0.4)
+      ctx.globalAlpha = appear
+      if (bug.resurrectedBy) {
+        // A zombie ticket: a sickly green aura and the client's colour around it.
+        const glow = ctx.createRadialGradient(x, y, bug.radius * 0.5, x, y, bug.radius * 2)
+        glow.addColorStop(0, "rgba(157,255,107,0.35)")
+        glow.addColorStop(1, "rgba(157,255,107,0)")
+        ctx.fillStyle = glow
+        ctx.beginPath(); ctx.arc(x, y, bug.radius * 2, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = clients[bug.resurrectedBy].color
+        ctx.lineWidth = 2
+        ctx.setLineDash([2, 6])
+        ctx.beginPath(); ctx.arc(x, y, bug.radius * 1.45, -time * 3, -time * 3 + Math.PI * 2); ctx.stroke()
+        ctx.setLineDash([])
+      }
+      drawBug(x, y, bug.radius * (0.4 + appear * 0.6), bug.resurrectedBy ? "#9dff6b" : bugKinds[bug.priority].color, heading, bug.age, { flash: bug.hitFlash, trait: bug.trait, reopened: bug.reopened || bug.resurrectedBy !== null })
+      ctx.globalAlpha = 1
+      const isTarget = mission?.kind === "killTarget" && mission.target === bug.key
+      if (isTarget) {
+        ctx.strokeStyle = "#ff2040"
+        ctx.lineWidth = 3
+        const pulse = bug.radius * 1.6 + Math.sin(time * 8) * 4
+        ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI * 2); ctx.stroke()
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + time
+          ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * pulse, y + Math.sin(a) * pulse); ctx.lineTo(x + Math.cos(a) * (pulse + 10), y + Math.sin(a) * (pulse + 10)); ctx.stroke()
+        }
+      }
+      const name = bug.resurrectedBy ? `🧟 ${bug.key}` : bug.reopened ? `${bug.key} ↺` : bug.key
+      label(name, x, y - bug.radius - 10, isTarget ? "#ff6b81" : bug.resurrectedBy ? "#9dff6b" : bug.reopened ? "#ff6b81" : "#e8ecf4")
+      if (bug.hp < bug.maxHp) {
+        const w = bug.radius * 2
+        ctx.fillStyle = "rgba(0,0,0,0.6)"
+        ctx.fillRect(x - w / 2, y + bug.radius + 6, w, 4)
+        ctx.fillStyle = bugKinds[bug.priority].color
+        ctx.fillRect(x - w / 2, y + bug.radius + 6, w * Math.max(0, bug.hp / bug.maxHp), 4)
+      }
+      const d = (aimWorld.x - x) ** 2 + (aimWorld.y - y) ** 2
+      if (d < hoveredDistance) {
+        hovered = bug
+        hoveredDistance = d
+      }
+    }
+
+    for (const boss of view.bosses) drawBoss(boss)
+
+    // Shots
+    ctx.lineCap = "round"
+    for (const shot of view.shots) {
+      const { x, y } = shot.position
+      const len = Math.hypot(shot.velocity.x, shot.velocity.y) || 1
+      const tx = (shot.velocity.x / len) * 16
+      const ty = (shot.velocity.y / len) * 16
+      ctx.strokeStyle = shot.homing ? "#ffb347" : view.player && view.player.buffs.hotfix > 0 ? "#ffb070" : "#a8f0ff"
+      ctx.shadowColor = ctx.strokeStyle
+      ctx.shadowBlur = 10
+      ctx.lineWidth = 5
+      ctx.beginPath(); ctx.moveTo(x - tx, y - ty); ctx.lineTo(x, y); ctx.stroke()
+    }
+    ctx.shadowBlur = 0
+
+    for (const shot of view.hostile) {
+      const { x, y } = shot.position
+      if (shot.text.length <= 2) {
+        ctx.font = `18px ${SANS}`
+        ctx.textAlign = "center"
+        ctx.fillText(shot.text, x, y + 6)
+        continue
+      }
+      ctx.font = `bold 11px ${MONO}`
+      const w = ctx.measureText(shot.text).width + 10
+      ctx.fillStyle = "#2a0a12"
+      ctx.strokeStyle = "#ff4d6d"
+      ctx.lineWidth = 1.5
+      ctx.shadowColor = "#ff4d6d"
+      ctx.shadowBlur = 10
+      roundRect(ctx, x - w / 2, y - 9, w, 18, 9)
+      ctx.fill(); ctx.stroke()
+      ctx.shadowBlur = 0
+      ctx.fillStyle = "#ffb3c0"
+      ctx.textAlign = "center"
+      ctx.fillText(shot.text, x, y + 4)
+    }
+
+    // Teammates first, then whoever this screen follows on top.
+    const named = view.players.length > 1
+    for (const teammate of view.players) {
+      if (teammate.slot !== view.player?.slot) drawPlayer(teammate, named)
+    }
+    if (view.player) drawPlayer(view.player, named)
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i]!
+      p.life -= dt
+      if (p.life <= 0) {
+        particles.splice(i, 1)
+        continue
+      }
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.vx *= 0.92
+      p.vy *= 0.92
+      ctx.globalAlpha = p.life / p.max
+      ctx.fillStyle = p.color
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
+    }
+    ctx.globalAlpha = 1
+    for (let i = trail.length - 1; i >= 0; i--) {
+      trail[i]!.life -= dt
+      if (trail[i]!.life <= 0) trail.splice(i, 1)
+    }
+
+    // Floating texts
+    for (let i = floaters.length - 1; i >= 0; i--) {
+      const f = floaters[i]!
+      f.life -= dt
+      if (f.life <= 0) {
+        floaters.splice(i, 1)
+        continue
+      }
+      const k = f.life / f.max
+      ctx.globalAlpha = Math.min(1, k * 2)
+      const y = f.y - (1 - k) * 40
+      ctx.textAlign = "center"
+      ctx.font = `bold ${f.big ? 22 : 13}px ${MONO}`
+      ctx.fillStyle = "#000"
+      ctx.fillText(f.text, f.x + 1, y + 1)
+      ctx.fillStyle = f.color
+      ctx.fillText(f.text, f.x, y)
+      if (f.sub) {
+        ctx.font = `${f.big ? 14 : 11}px ${SANS}`
+        ctx.fillStyle = "#d8dee9"
+        ctx.fillText(truncate(f.sub, f.big ? 70 : 46), f.x, y + (f.big ? 22 : 15))
+      }
+    }
+    ctx.globalAlpha = 1
+
+    // --- Screen space ---------------------------------------------------
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+    if (flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${flash * 0.35})`
+      ctx.fillRect(0, 0, width, height)
+    }
+    if (view.player && view.player.hp <= 0 && view.players.length > 1 && view.run.phase !== "dead") {
+      ctx.fillStyle = "rgba(20,22,30,0.45)"
+      ctx.fillRect(0, 0, width, height)
+      ctx.textAlign = "center"
+      ctx.font = `bold 16px ${MONO}`
+      ctx.fillStyle = "#ff9440"
+      ctx.fillText(t().hud.youAreDown, width / 2, height * 0.68)
+    } else if (view.player && view.player.hp <= 2 && view.run.phase !== "dead") {
+      const g = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.3, width / 2, height / 2, Math.max(width, height) * 0.7)
+      g.addColorStop(0, "rgba(255,0,40,0)")
+      g.addColorStop(1, `rgba(255,0,40,${0.25 + Math.sin(time * 5) * 0.1})`)
+      ctx.fillStyle = g
+      ctx.fillRect(0, 0, width, height)
+    }
+
+    // Arrows toward an off-screen mission target, and toward the call.
+    const pointAt = (world: Vec, color: string, text: string, textColor: string) => {
+      const sxT = (world.x - camera.x) * camera.scale
+      const syT = (world.y - camera.y) * camera.scale
+      if (sxT >= 0 && syT >= 0 && sxT <= width && syT <= height) return
+      const cx = width / 2
+      const cy = height / 2
+      const a = Math.atan2(syT - cy, sxT - cx)
+      const ex = Math.max(40, Math.min(width - 40, cx + Math.cos(a) * width))
+      const ey = Math.max(90, Math.min(height - 40, cy + Math.sin(a) * height))
+      ctx.save()
+      ctx.translate(ex, ey)
+      ctx.rotate(a)
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -12); ctx.lineTo(-10, 12); ctx.closePath(); ctx.fill()
+      ctx.restore()
+      label(text, ex, ey + 28, textColor, 11)
+    }
+    if (mission?.kind === "killTarget") {
+      const target = view.bugs.find((b) => b.key === mission.target)
+      if (target) pointAt(target.position, "#ff2040", target.key, "#ff6b81")
+    }
+    for (const teammate of view.players) {
+      if (teammate.hp <= 0 && teammate.slot !== view.player?.slot && view.run.phase !== "dead") pointAt(teammate.position, "#ff9440", `🔥 ${teammate.name}`, "#ffb070")
+    }
+    const call = view.calls.active
+    if (call?.kind === "meet") pointAt(call.room, clients[call.client].color, t().calls.kinds.meet, "#e8ecf4")
+    if (call?.kind === "slack" && view.player) {
+      const me = view.player.position
+      const nearest = [...call.pings].sort((a, b) => (a.x - me.x) ** 2 + (a.y - me.y) ** 2 - ((b.x - me.x) ** 2 + (b.y - me.y) ** 2))[0]
+      if (nearest) pointAt(nearest, "#7fb8ff", t().calls.kinds.slack, "#e8ecf4")
+    }
+
+    // Ticket tooltip: read the ticket you are aiming at.
+    if (hovered) {
+      const hx = (hovered.position.x - camera.x) * camera.scale
+      const hy = (hovered.position.y - camera.y) * camera.scale
+      const lines = wrap(hovered.summary, 44)
+      const trait = t().traits[hovered.trait]
+      const boxW = 300
+      const boxH = 44 + lines.length * 16 + (trait ? 16 : 0)
+      const bx = Math.min(width - boxW - 10, hx + 30)
+      const by = Math.max(110, Math.min(height - boxH - 10, hy - boxH / 2))
+      ctx.fillStyle = "rgba(10,12,20,0.92)"
+      ctx.strokeStyle = bugKinds[hovered.priority].color
+      ctx.lineWidth = 1.5
+      roundRect(ctx, bx, by, boxW, boxH, 8)
+      ctx.fill(); ctx.stroke()
+      ctx.textAlign = "left"
+      ctx.font = `bold 12px ${MONO}`
+      ctx.fillStyle = bugKinds[hovered.priority].color
+      ctx.fillText(`${hovered.key}  ·  ${hovered.priority}`, bx + 12, by + 20)
+      ctx.font = `13px ${SANS}`
+      ctx.fillStyle = "#e8ecf4"
+      lines.forEach((line, i) => ctx.fillText(line, bx + 12, by + 40 + i * 16))
+      if (trait) {
+        ctx.font = `bold 10px ${MONO}`
+        ctx.fillStyle = "#9aa4b8"
+        ctx.fillText(trait, bx + 12, by + 40 + lines.length * 16 + 4)
+      }
+    }
+
+    const hudShade = ctx.createLinearGradient(0, 0, 0, 120)
+    hudShade.addColorStop(0, "rgba(5,6,10,0.75)")
+    hudShade.addColorStop(1, "rgba(5,6,10,0)")
+    ctx.fillStyle = hudShade
+    ctx.fillRect(0, 0, width, 120)
+    drawMinimap(view, width, height, viewW, viewH)
+    drawHud(view, width, height, accent)
+
+    if (banner) {
+      banner.life -= dt
+      const k = banner.life / banner.max
+      if (banner.life <= 0) banner = null
+      else {
+        const alpha = Math.min(1, k * 4, (1 - k) * 8)
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = "rgba(0,0,0,0.65)"
+        ctx.fillRect(0, height * 0.32, width, 110)
+        ctx.textAlign = "center"
+        ctx.font = `900 44px ${SANS}`
+        ctx.fillStyle = banner.color
+        ctx.fillText(banner.title, width / 2, height * 0.32 + 55)
+        ctx.font = `16px ${MONO}`
+        ctx.fillStyle = "#e8ecf4"
+        ctx.fillText(truncate(banner.subtitle, 90), width / 2, height * 0.32 + 85)
+        ctx.globalAlpha = 1
+      }
+    }
+
+    // Crosshair
+    if (view.run.phase !== "dead" && view.run.phase !== "cleared") {
+      ctx.strokeStyle = hovered ? bugKinds[hovered.priority].color : "#ffffff"
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(cursor.x, cursor.y, 10, 0, Math.PI * 2); ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(cursor.x - 16, cursor.y); ctx.lineTo(cursor.x - 5, cursor.y)
+      ctx.moveTo(cursor.x + 5, cursor.y); ctx.lineTo(cursor.x + 16, cursor.y)
+      ctx.moveTo(cursor.x, cursor.y - 16); ctx.lineTo(cursor.x, cursor.y - 5)
+      ctx.moveTo(cursor.x, cursor.y + 5); ctx.lineTo(cursor.x, cursor.y + 16)
+      ctx.stroke()
+    }
+  }
+
+  const drawHud = (view: View, width: number, height: number, accent: string) => {
+    const run = view.run
+    const player = view.player
+    ctx.textAlign = "left"
+    // Top-left: sprint and sanity.
+    ctx.font = `bold 12px ${MONO}`
+    ctx.fillStyle = accent
+    ctx.fillText(`${view.level.sprint.toUpperCase()} · ${view.level.name.toUpperCase()}`, 20, 28)
+    if (player) {
+      ctx.font = `11px ${MONO}`
+      ctx.fillStyle = "#9aa4b8"
+      ctx.fillText(t().hud.sanity, 20, 50)
+      for (let i = 0; i < player.maxHp; i++) {
+        drawHeart(20 + i * 24, 58, i < player.hp ? "#ff4d6d" : "rgba(255,255,255,0.15)")
+      }
+      ctx.font = `11px ${MONO}`
+      ctx.fillStyle = "#9aa4b8"
+      ctx.textAlign = "left"
+      ctx.fillText("GIT RESET --HARD  [Q]", 20, 100)
+      for (let i = 0; i < player.bombs; i++) {
+        ctx.font = `16px ${SANS}`
+        ctx.fillText("⏪", 20 + i * 24, 122)
+      }
+      let row = 0
+      for (const kind of ["tools", "hotfix", "refactor", "coffee", "unitTest"] as const) {
+        const left = player.buffs[kind]
+        if (left <= 0) continue
+        const y = 142 + row * 22
+        ctx.font = `14px ${SANS}`
+        ctx.fillStyle = "#ffffff"
+        ctx.fillText(pickupIcons[kind], 20, y + 4)
+        ctx.fillStyle = "rgba(255,255,255,0.15)"
+        ctx.fillRect(44, y - 6, 100, 8)
+        ctx.fillStyle = "#9dffb0"
+        ctx.fillRect(44, y - 6, 100 * (left / BUFF_SECONDS[kind]), 8)
+        row++
+      }
+    }
+
+    // Top-right: story points and combo.
+    ctx.textAlign = "right"
+    ctx.font = `11px ${MONO}`
+    ctx.fillStyle = "#9aa4b8"
+    ctx.fillText("STORY POINTS", width - 20, 28)
+    ctx.font = `900 30px ${SANS}`
+    ctx.fillStyle = "#ffffff"
+    ctx.fillText(formatNumber(run.score), width - 20, 60)
+    if (run.combo >= 2) {
+      ctx.font = `bold 15px ${MONO}`
+      ctx.fillStyle = run.combo >= 10 ? "#ffd84a" : accent
+      ctx.fillText(`COMBO ×${run.combo}  (${comboMultiplier(run.combo)}x)`, width - 20, 84)
+      ctx.fillStyle = "rgba(255,255,255,0.15)"
+      ctx.fillRect(width - 160, 92, 140, 4)
+      ctx.fillStyle = run.combo >= 10 ? "#ffd84a" : accent
+      ctx.fillRect(width - 160, 92, 140 * (run.comboTimer / 2.6), 4)
+    }
+
+    // Top-centre: backlog or boss.
+    ctx.textAlign = "center"
+    const boss = view.bosses[0]
+    if (boss) {
+      const w = Math.min(560, width - 420)
+      const x = width / 2 - w / 2
+      ctx.font = `bold 13px ${MONO}`
+      ctx.fillStyle = boss.color
+      ctx.fillText(`☠ ${boss.key}`, width / 2, 24)
+      ctx.font = `12px ${SANS}`
+      ctx.fillStyle = "#d8dee9"
+      ctx.fillText(truncate(boss.title, 80), width / 2, 42)
+      ctx.fillStyle = "rgba(255,255,255,0.12)"
+      roundRect(ctx, x, 52, w, 12, 6); ctx.fill()
+      ctx.fillStyle = boss.shield > 0 ? "#ffffff" : boss.color
+      roundRect(ctx, x, 52, Math.max(0, w * (boss.hp / boss.maxHp)), 12, 6); ctx.fill()
+    } else if (run.phase === "waves" && view.level.endless) {
+      // Endless: no backlog to empty, only the next boss getting closer.
+      const every = view.level.endless.every
+      const bossIn = Math.max(0, run.nextBossAt - run.wave)
+      const w = Math.min(360, width - 460)
+      const x = width / 2 - w / 2
+      ctx.font = `bold 12px ${MONO}`
+      ctx.fillStyle = "#e8ecf4"
+      ctx.fillText(t().hud.endless(run.wave, bossIn), width / 2, 28)
+      ctx.fillStyle = "rgba(255,255,255,0.12)"
+      roundRect(ctx, x, 38, w, 8, 4); ctx.fill()
+      ctx.fillStyle = accent
+      roundRect(ctx, x, 38, w * Math.min(1, (every - bossIn) / every), 8, 4); ctx.fill()
+    } else if (run.phase === "waves") {
+      const total = view.level.bugs.length
+      const released = Math.min(total, run.nextBug)
+      const open = total - released + view.bugs.length
+      const w = Math.min(360, width - 460)
+      const x = width / 2 - w / 2
+      ctx.font = `bold 12px ${MONO}`
+      ctx.fillStyle = "#e8ecf4"
+      ctx.fillText(t().hud.backlog(open, run.wave), width / 2, 28)
+      ctx.fillStyle = "rgba(255,255,255,0.12)"
+      roundRect(ctx, x, 38, w, 8, 4); ctx.fill()
+      ctx.fillStyle = accent
+      roundRect(ctx, x, 38, w * Math.max(0, 1 - open / Math.max(1, total)), 8, 4); ctx.fill()
+    }
+
+    if (run.time < 9 && run.phase === "waves") {
+      ctx.globalAlpha = Math.min(1, (9 - run.time) / 2)
+      ctx.textAlign = "left"
+      ctx.font = `12px ${MONO}`
+      ctx.fillStyle = "#9aa4b8"
+      const hints = touchMode() ? t().hud.touchHints : t().hud.hints
+      hints.forEach((hint, i) => ctx.fillText(hint, 20, height - 20 - (hints.length - 1 - i) * 18))
+      ctx.globalAlpha = 1
+    }
+  }
+
+  /** Top-right under the score on desktop; bottom-centre on touch, between the two thumbs (the chat holds the top-right). */
+  const minimapRect = (width: number, height: number) => {
+    const w = Math.round(Math.max(105, Math.min(180, width * 0.14)))
+    const h = Math.round((w * ARENA.height) / ARENA.width)
+    return touchMode() ? { x: Math.round(width / 2 - w / 2), y: height - h - 10, w, h } : { x: width - w - 20, y: 108, w, h }
+  }
+
+  /** The whole arena at a glance: bugs, bosses, power-ups, the call to answer, and what the camera sees. */
+  const drawMinimap = (view: View, width: number, height: number, viewW: number, viewH: number) => {
+    if (!view.player || (view.run.phase !== "waves" && view.run.phase !== "boss")) return
+    const { x, y, w, h } = minimapRect(width, height)
+    const k = w / ARENA.width
+    const at = (p: Vec) => ({ x: x + p.x * k, y: y + p.y * k })
+    const dot = (p: Vec, r: number, color: string) => {
+      const m = at(p)
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.arc(m.x, m.y, r, 0, Math.PI * 2); ctx.fill()
+    }
+
+    ctx.save()
+    ctx.globalAlpha = 0.9
+    ctx.fillStyle = "rgba(10,12,20,0.78)"
+    ctx.strokeStyle = "rgba(255,255,255,0.18)"
+    ctx.lineWidth = 1
+    roundRect(ctx, x, y, w, h, 6)
+    ctx.fill(); ctx.stroke()
+    ctx.clip()
+
+    // What is on screen right now.
+    ctx.strokeStyle = "rgba(255,255,255,0.35)"
+    ctx.strokeRect(x + camera.x * k, y + camera.y * k, viewW * k, viewH * k)
+
+    const call = view.calls.active
+    if (call) {
+      const blink = call.timeLeft < 4 && Math.floor(time * 6) % 2 === 0
+      ctx.globalAlpha = blink ? 0.4 : 0.9
+      if (call.kind === "meet") {
+        const room = at(call.room)
+        ctx.strokeStyle = clients[call.client].color
+        ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.arc(room.x, room.y, Math.max(4, call.radius * k), 0, Math.PI * 2); ctx.stroke()
+      } else {
+        for (const ping of call.pings) dot(ping, 2.5, "#7fb8ff")
+      }
+      ctx.globalAlpha = 0.9
+    }
+
+    for (const pickup of view.pickups) {
+      const m = at(pickup.position)
+      ctx.fillStyle = "#9dffb0"
+      ctx.fillRect(m.x - 2, m.y - 2, 4, 4)
+    }
+    for (const turret of view.turrets) {
+      const m = at(turret.position)
+      ctx.strokeStyle = "#7fdcff"
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(m.x - 3, m.y - 3, 6, 6)
+    }
+    const mission = view.missions.active
+    for (const bug of view.bugs) {
+      const target = mission?.kind === "killTarget" && mission.target === bug.key
+      dot(bug.position, target ? 3 : 1.8, target ? "#ff2040" : bug.resurrectedBy ? "#9dff6b" : bugKinds[bug.priority].color)
+      if (target && Math.floor(time * 4) % 2 === 0) {
+        const m = at(bug.position)
+        ctx.strokeStyle = "#ff2040"
+        ctx.lineWidth = 1
+        ctx.beginPath(); ctx.arc(m.x, m.y, 6, 0, Math.PI * 2); ctx.stroke()
+      }
+    }
+    for (const boss of view.bosses) dot(boss.position, 5, boss.color)
+
+    ctx.globalAlpha = 1
+    for (const teammate of view.players) {
+      if (teammate.slot === view.player.slot) continue
+      dot(teammate.position, 3, teammate.hp > 0 ? teammate.color : "#ff9440")
+    }
+    dot(view.player.position, 3.5, "#ffffff")
+    dot(view.player.position, 2, view.player.color)
+    ctx.restore()
+  }
+
+  const drawHeart = (x: number, y: number, color: string) => {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(x + 9, y + 16)
+    ctx.bezierCurveTo(x - 4, y + 7, x + 1, y - 2, x + 9, y + 4)
+    ctx.bezierCurveTo(x + 17, y - 2, x + 22, y + 7, x + 9, y + 16)
+    ctx.fill()
+  }
+
+  return { draw, fx, toWorld, toScreen, showBanner, camera, clientColor: (id: keyof typeof clients) => clients[id].color }
+}
+
+export type Renderer = ReturnType<typeof makeRenderer>
+
+const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  ctx.beginPath()
+  ctx.roundRect(x, y, Math.max(0, w), h, Math.min(r, h / 2, Math.max(0, w) / 2))
+}
+
+const truncate = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+const wrap = (text: string, width: number): Array<string> => {
+  const words = text.split(" ")
+  const lines: Array<string> = []
+  let line = ""
+  for (const word of words) {
+    if ((line + " " + word).trim().length > width) {
+      if (line) lines.push(line)
+      line = word
+    } else {
+      line = (line + " " + word).trim()
+    }
+  }
+  if (line) lines.push(line)
+  return lines.slice(0, 4)
+}
+
+const shade = (hex: string, amount: number): string => {
+  const n = parseInt(hex.slice(1), 16)
+  const f = (c: number) => Math.max(0, Math.min(255, Math.round(c + (amount < 0 ? c * amount : (255 - c) * amount))))
+  const r = f((n >> 16) & 255)
+  const g = f((n >> 8) & 255)
+  const b = f(n & 255)
+  return `rgb(${r},${g},${b})`
+}
