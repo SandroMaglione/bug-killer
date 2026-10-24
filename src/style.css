@@ -15,6 +15,11 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+}
+/* Pinned, so iOS Safari cannot scroll the page under the fixed layers (see touch.ts). */
+body {
+  position: fixed;
+  inset: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
@@ -437,11 +442,14 @@ code { font-family: var(--mono); color: #ffd84a; }
   touch-action: none;
 }
 .touch-btn.down { transform: scale(0.92); background: rgba(255, 255, 255, 0.2); }
-.touch-btn.dash { right: 22px; bottom: 26px; width: 72px; height: 72px; border-color: rgba(127, 220, 255, 0.6); color: #7fdcff; }
-.touch-btn.bomb { right: 108px; bottom: 34px; width: 54px; height: 54px; font-size: 22px; }
+/* A thumb lands off-centre: the hit area reaches past the drawn circle. */
+.touch-btn::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; }
+/* Clear of the bottom edge, where iOS keeps the first tap for its own bars and home gesture. */
+.touch-btn.dash { right: 24px; bottom: 44px; width: 76px; height: 76px; border-color: rgba(127, 220, 255, 0.6); color: #7fdcff; }
+.touch-btn.bomb { right: 118px; bottom: 60px; width: 58px; height: 58px; font-size: 22px; }
 
-/* Under the backlog bar, out of the way of both thumbs. */
-.touch-bar { position: absolute; left: 50%; top: 72px; display: flex; gap: 6px; transform: translateX(-50%); z-index: 1; }
+/* Top-right under the score and combo, out of the way of both thumbs. */
+.touch-bar { position: absolute; right: 12px; top: 104px; display: flex; gap: 6px; z-index: 1; }
 .touch-small {
   width: 34px;
   height: 34px;
@@ -451,24 +459,62 @@ code { font-family: var(--mono); color: #ffd84a; }
   font-size: 16px;
 }
 
-/* With thumbs on the glass, the chat moves up and keeps only the latest message. */
-body.touch #chat { top: 104px; bottom: auto; right: 12px; width: min(300px, 38vw); gap: 6px; opacity: 0.92; }
+/*
+ * With thumbs on the glass, the chat shrinks to a ticker under the backlog bar:
+ * the mission and the bonus call as one-line pills, then the latest message on
+ * one line, fading out after a few seconds. The right side stays free.
+ */
+body.touch #chat {
+  top: 70px;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  width: max-content;
+  max-width: min(440px, 52vw);
+  align-items: center;
+  gap: 5px;
+  transform: translateX(-50%);
+}
 body.touch .chat-header { display: none; }
+body.touch .mission {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+body.touch .mission.hidden { display: none; }
+body.touch .mission-top { display: contents; }
+body.touch .mission-kind { display: none; }
+body.touch .mission .avatar { width: 20px; height: 20px; font-size: 10px; border-radius: 50%; }
+body.touch .mission-goal { min-width: 0; margin: 0; font: 700 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.touch .mission .bar { flex: none; width: 56px; height: 4px; }
+body.touch .mission-time { order: 1; min-width: 4ch; font-size: 11px; text-align: right; }
+body.touch .chat-list { max-width: 100%; }
+body.touch .msg {
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 3px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(12, 14, 22, 0.7);
+  opacity: 0.9;
+  animation: ticker 5s ease-out forwards;
+}
 body.touch .msg:nth-child(n + 2) { display: none; }
-body.touch .msg, body.touch .mission { padding: 8px 10px; }
-body.touch .text, body.touch .mission-goal { font-size: 12px; }
-body.touch .text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+body.touch .msg .avatar { width: 18px; height: 18px; font-size: 9px; border-radius: 50%; }
+body.touch .bubble { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+body.touch .meta .name { font-size: 11px; }
+body.touch .meta .name::after { content: ":"; }
+body.touch .meta .role, body.touch .meta .time { display: none; }
+body.touch .text { min-width: 0; margin: 0; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-@media (max-height: 500px) {
-  body.touch #chat { top: 96px; width: min(250px, 34vw); }
-  body.touch .meta .role, body.touch .meta .time { display: none; }
-  body.touch .msg { gap: 6px; padding: 6px 8px; }
-  body.touch .msg .avatar, body.touch .mission-top .avatar { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; }
-  body.touch .mission { padding: 6px 8px; }
-  body.touch .mission-kind { font-size: 9px; }
-  body.touch .mission-time { font-size: 12px; }
-  body.touch .mission-goal { margin: 3px 0 5px; font-size: 11px; }
-  body.touch .text { font-size: 11px; -webkit-line-clamp: 2; line-clamp: 2; }
+@keyframes ticker {
+  from { opacity: 0; transform: translateY(-6px); }
+  8%, 80% { opacity: 0.9; transform: none; }
+  to { opacity: 0; visibility: hidden; }
 }
 
 .rotate {

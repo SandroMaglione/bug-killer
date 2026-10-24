@@ -20,6 +20,15 @@ window.addEventListener(
   { capture: true }
 )
 
+// iOS Safari can leave the page scrolled by its bar height after a rotation or when its bars
+// collapse: the fixed layers then draw higher than where they take taps. Keep it at the origin.
+const pin = () => {
+  if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0)
+}
+window.addEventListener("scroll", pin, { passive: true })
+window.visualViewport?.addEventListener("resize", pin)
+window.addEventListener("orientationchange", () => window.setTimeout(pin, 300))
+
 export const touchMode = (): boolean => touch
 export const onTouchMode = (listener: () => void) => listeners.add(listener)
 
