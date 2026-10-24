@@ -14,7 +14,7 @@ import { makeInput, typing } from "./host/input.ts"
 import { formatNumber, locale, setLocale, t } from "./host/language.ts"
 import { connect, makeFrames } from "./host/net.ts"
 import type { Connection } from "./host/net.ts"
-import { makeRenderer } from "./host/render.ts"
+import { createRenderer } from "./host/renderer.ts"
 import { makeTouchControls, onTouchMode, touchMode } from "./host/touch.ts"
 import { codePattern, NAME_MAX } from "./net/protocol.ts"
 import type { ErrorCode, RoomInfo, ServerMessage } from "./net/protocol.ts"
@@ -43,13 +43,12 @@ const loadProgress = (): Progress => {
 }
 const saveProgress = (p: Progress) => localStorage.setItem("bugkiller:progress", JSON.stringify(p))
 
-const canvas = document.querySelector<HTMLCanvasElement>("#game")!
 const overlay = document.querySelector<HTMLElement>("#overlay")!
 const chatRoot = document.querySelector<HTMLElement>("#chat")!
 const touchRoot = document.querySelector<HTMLElement>("#touch")!
 const rotateText = document.querySelector<HTMLElement>("#rotate-text")!
 
-const renderer = makeRenderer(canvas)
+const { renderer, canvas } = await createRenderer(document.querySelector<HTMLCanvasElement>("#game")!)
 const audio = makeAudio()
 const toggleMute = () => {
   const muted = audio.toggleMute()
