@@ -15,6 +15,11 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+}
+/* Pinned, so iOS Safari cannot scroll the page under the fixed layers (see touch.ts). */
+body {
+  position: fixed;
+  inset: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
@@ -437,8 +442,11 @@ code { font-family: var(--mono); color: #ffd84a; }
   touch-action: none;
 }
 .touch-btn.down { transform: scale(0.92); background: rgba(255, 255, 255, 0.2); }
-.touch-btn.dash { right: 22px; bottom: 26px; width: 72px; height: 72px; border-color: rgba(127, 220, 255, 0.6); color: #7fdcff; }
-.touch-btn.bomb { right: 108px; bottom: 34px; width: 54px; height: 54px; font-size: 22px; }
+/* A thumb lands off-centre: the hit area reaches past the drawn circle. */
+.touch-btn::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; }
+/* Clear of the bottom edge, where iOS keeps the first tap for its own bars and home gesture. */
+.touch-btn.dash { right: 24px; bottom: 44px; width: 76px; height: 76px; border-color: rgba(127, 220, 255, 0.6); color: #7fdcff; }
+.touch-btn.bomb { right: 118px; bottom: 60px; width: 58px; height: 58px; font-size: 22px; }
 
 /* Under the backlog bar, out of the way of both thumbs. */
 .touch-bar { position: absolute; left: 50%; top: 72px; display: flex; gap: 6px; transform: translateX(-50%); z-index: 1; }
