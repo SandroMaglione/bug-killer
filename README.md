@@ -63,22 +63,6 @@ The simulation is a fixed-step (60 Hz) [Ritmo](https://github.com/typeonce-dev/r
 - The server is authoritative: it runs the same simulation at 60 Hz and sends the view at 30 Hz; browsers only send input (30 times a second) and draw by interpolating between two frames (`src/host/net.ts`).
 - `test/simulation.test.ts` — an autopilot plays the levels headless with the same intents as a player, in teams too. `test/rooms.test.ts` — the rooms with fake browsers.
 
-## Deploy
-
-Production runs on Cloudflare Workers (`wrangler.jsonc`): the built game is static assets, and the runs live in a single Durable Object (`src/server/worker.ts`) running the same rooms as the Node server. GitHub Actions (`.github/workflows/ci.yml`) checks every pull request and deploys every push to `main`, once the repository has these settings:
-
-| Setting | Kind | Value |
-|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | secret | an API token from the "Edit Cloudflare Workers" template, limited to your account and the domain's zone |
-| `CLOUDFLARE_ACCOUNT_ID` | secret | your Cloudflare account ID |
-| `DEPLOY_DOMAIN` | variable | the custom domain, e.g. `bug-killer.example.com`, in a zone on the same account; the first deploy creates its DNS record |
-
-Without `DEPLOY_DOMAIN` the workflow only checks, so a fork never tries to deploy. By hand: `pnpm exec wrangler login`, then `pnpm build && pnpm exec wrangler deploy --domain <your domain>`.
-
-The Workers Free plan is enough for a hobby. Static files are free and unlimited, and single player never touches the server. The Durable Object gets 100,000 requests a day, and incoming WebSocket messages count 1 in 20: at 30 inputs a second, about 18 hours of play a day, counting every developer in every run together (twenty people playing for an hour use it up), reset at 00:00 UTC. Past the quota multiplayer stops answering until the reset, and the game says so; the Free plan never bills. Nothing is stored, so a deploy ends the runs in progress.
-
-Since every run steps in that one object, the server holds at most 10 runs (`MAX_ROOMS` in `src/server/rooms.ts`), 2 of them from the same address, and the Worker takes at most 50 connections, 8 from the same address (`src/server/worker.ts`). Past any of these the game answers that the server is busy. A [rate limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/) on `/runs` in the Cloudflare dashboard (one is free) also stops anyone opening sockets in a loop before they reach the Worker.
-
 ## License
 
 [MIT](LICENSE)

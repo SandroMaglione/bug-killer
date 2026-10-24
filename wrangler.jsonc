@@ -1,5 +1,5 @@
 // The Cloudflare deploy: the built game as static assets, the runs in a Durable Object (`src/server/worker.ts`).
-// No account or domain here: CI passes them (see the README), so a fork deploys to its own account.
+// No account or domain here: CI passes them (see `.github/workflows/ci.yml`), so a fork deploys to its own account.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bug-killer",
