@@ -512,13 +512,18 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     ctx.fillText(boss.key, x, y - boss.radius - 14)
   }
 
-  const label = (text: string, x: number, y: number, color: string, size = 11) => {
+  const label = (text: string, x: number, y: number, color: string, size = 11, border?: string) => {
     ctx.font = `bold ${size}px ${MONO}`
     ctx.textAlign = "center"
     const w = ctx.measureText(text).width + 8
     ctx.fillStyle = "rgba(0,0,0,0.6)"
     roundRect(ctx, x - w / 2, y - size, w, size + 5, 4)
     ctx.fill()
+    if (border) {
+      ctx.strokeStyle = border
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
     ctx.fillStyle = color
     ctx.fillText(text, x, y)
   }
@@ -623,6 +628,15 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     let hovered: View["bugs"][number] | null = null
     let hoveredDistance = 70 ** 2
     for (const bug of view.bugs) {
+      const d = (aimWorld.x - bug.position.x) ** 2 + (aimWorld.y - bug.position.y) ** 2
+      if (d < hoveredDistance) {
+        hovered = bug
+        hoveredDistance = d
+      }
+    }
+    // On a phone the aimed bug's name grows into a chip with its priority and trait, instead of the tooltip.
+    const chip = touchMode() ? hovered : null
+    for (const bug of view.bugs) {
       const { x, y } = bug.position
       const heading = view.player ? Math.atan2(view.player.position.y - y, view.player.position.x - x) : 0
       const appear = Math.min(1, bug.age / 0.4)
@@ -654,18 +668,18 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
         }
       }
       const name = bug.resurrectedBy ? `🧟 ${bug.key}` : bug.reopened ? `${bug.key} ↺` : bug.key
-      label(name, x, y - bug.radius - 10, isTarget ? "#ff6b81" : bug.resurrectedBy ? "#9dff6b" : bug.reopened ? "#ff6b81" : "#e8ecf4")
+      if (bug === chip) {
+        const trait = t().traits[bug.trait].split(":")[0]
+        label([name, bug.priority, trait].filter(Boolean).join(" · "), x, y - bug.radius - 10, bugKinds[bug.priority].color, 16, bugKinds[bug.priority].color)
+      } else {
+        label(name, x, y - bug.radius - 10, isTarget ? "#ff6b81" : bug.resurrectedBy ? "#9dff6b" : bug.reopened ? "#ff6b81" : "#e8ecf4")
+      }
       if (bug.hp < bug.maxHp) {
         const w = bug.radius * 2
         ctx.fillStyle = "rgba(0,0,0,0.6)"
         ctx.fillRect(x - w / 2, y + bug.radius + 6, w, 4)
         ctx.fillStyle = bugKinds[bug.priority].color
         ctx.fillRect(x - w / 2, y + bug.radius + 6, w * Math.max(0, bug.hp / bug.maxHp), 4)
-      }
-      const d = (aimWorld.x - x) ** 2 + (aimWorld.y - y) ** 2
-      if (d < hoveredDistance) {
-        hovered = bug
-        hoveredDistance = d
       }
     }
 
@@ -819,8 +833,8 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
       if (nearest) pointAt(nearest, "#7fb8ff", t().calls.kinds.slack, "#e8ecf4")
     }
 
-    // Ticket tooltip: read the ticket you are aiming at.
-    if (hovered) {
+    // Ticket tooltip: read the ticket you are aiming at (desktop; a phone has the chip).
+    if (hovered && !chip) {
       const hx = (hovered.position.x - camera.x) * camera.scale
       const hy = (hovered.position.y - camera.y) * camera.scale
       const lines = wrap(hovered.summary, 44)
