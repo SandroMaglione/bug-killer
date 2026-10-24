@@ -1,47 +1,13 @@
 import { bugKinds } from "../content/bugs.ts"
-import type { Level } from "../content/levels.ts"
 import { clients } from "../content/clients.ts"
 import { comboMultiplier } from "../sim/systems/combat.ts"
 import { ARENA, BUFF_SECONDS, PARTY, PLAYER, TURRET } from "../sim/constants.ts"
-import type { FxValue, PickupKind, Vec } from "../sim/schema.ts"
+import type { FxValue, Vec } from "../sim/schema.ts"
 import type { View } from "../sim/simulation.ts"
-import { formatNumber, locale, t } from "./language.ts"
+import { formatNumber, t } from "./language.ts"
+import { floorKey, MONO, paintBug, paintFloor, paintHeart, paintHostile, paintLabel, paintPickup, paintPing, paintPlayer, paintTooltip, pickupIcons, pickupInfo, roundRect, SANS, shade, tooltipHeight, TOOLTIP_WIDTH, truncate } from "./paint.ts"
+import type { BugLook } from "./paint.ts"
 import { touchMode } from "./touch.ts"
-
-const MONO = `"JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace`
-const SANS = `"Inter", ui-sans-serif, system-ui, -apple-system, sans-serif`
-
-const pickupIcons = {
-  hotfix: "🔥",
-  refactor: "🔀",
-  coffee: "☕",
-  unitTest: "🛡️",
-  revert: "⏪",
-  pizza: "🍕",
-  tools: "🤖",
-  ai: "🧠"
-} as const satisfies Record<PickupKind, string>
-
-export const pickupInfo = (kind: PickupKind) => ({ icon: pickupIcons[kind], ...t().pickups[kind] })
-
-const codeLines = [
-  "if (user == null) return;",
-  "// TODO: fix before release",
-  "catch (e) { /* ignore */ }",
-  "const id = order?.id ?? order.id",
-  "await sleep(5000) // race condition",
-  "SELECT * FROM machines;",
-  "git push --force",
-  "z-index: 99999 !important;",
-  "setTimeout(fix, 0)",
-  "return undefined as any",
-  "npm install --legacy-peer-deps",
-  "rm -rf node_modules && npm i",
-  "it.skip('works on staging')",
-  "@ts-ignore",
-  "while (true) { retry() }",
-  "date.getTimezoneOffset() // ???"
-]
 
 interface Particle {
   x: number
@@ -95,42 +61,6 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
 
   const toWorld = (screen: Vec): Vec => ({ x: camera.x + screen.x / camera.scale, y: camera.y + screen.y / camera.scale })
   const toScreen = (world: Vec): Vec => ({ x: (world.x - camera.x) * camera.scale, y: (world.y - camera.y) * camera.scale })
-
-  const buildFloor = (level: Level) => {
-    const c = document.createElement("canvas")
-    c.width = ARENA.width
-    c.height = ARENA.height
-    const g = c.getContext("2d")!
-    g.fillStyle = level.theme.background
-    g.fillRect(0, 0, ARENA.width, ARENA.height)
-    g.strokeStyle = level.theme.grid
-    g.lineWidth = 1
-    for (let x = 0; x <= ARENA.width; x += 60) {
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ARENA.height); g.stroke()
-    }
-    for (let y = 0; y <= ARENA.height; y += 60) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(ARENA.width, y); g.stroke()
-    }
-    // Faded code on the floor: the codebase you are standing on.
-    g.font = `16px ${MONO}`
-    g.fillStyle = level.theme.grid
-    let seed = level.id.length * 97
-    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-    for (let i = 0; i < 90; i++) {
-      g.globalAlpha = 0.35 + rand() * 0.35
-      const lines = [...codeLines, ...t().floorCode]
-      const line = lines[Math.floor(rand() * lines.length)] ?? ""
-      g.fillText(`${String(Math.floor(rand() * 900) + 10).padStart(4, " ")}  ${line}`, rand() * (ARENA.width - 300), 30 + rand() * (ARENA.height - 40))
-    }
-    g.globalAlpha = 1
-    g.strokeStyle = level.theme.accent
-    g.lineWidth = 4
-    g.shadowColor = level.theme.accent
-    g.shadowBlur = 20
-    g.strokeRect(2, 2, ARENA.width - 4, ARENA.height - 4)
-    floor = c
-    floorLevel = `${level.id}:${locale()}`
-  }
 
   const burst = (x: number, y: number, color: string, count: number, speed: number, size = 3) => {
     for (let i = 0; i < count; i++) {
@@ -235,7 +165,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
 
   // --- Drawing helpers ----------------------------------------------------
 
-  const drawBug = (x: number, y: number, r: number, color: string, heading: number, t: number, options: { flash: number; trait: string; reopened: boolean; boss?: boolean }) => {
+  const drawBug = (x: number, y: number, r: number, color: string, heading: number, t: number, options: BugLook) => {
     ctx.save()
     ctx.translate(x, y)
     if (options.trait === "jittery" && Math.sin(t * 40) > 0.6) {
@@ -248,54 +178,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
       ctx.globalAlpha = 1
     }
     ctx.rotate(heading)
-    const legSwing = Math.sin(t * 18) * 0.35
-    ctx.strokeStyle = shade(color, -0.25)
-    ctx.lineWidth = Math.max(2, r * 0.12)
-    ctx.lineCap = "round"
-    for (let i = -1; i <= 1; i++) {
-      for (const side of [-1, 1]) {
-        const swing = (i % 2 === 0 ? legSwing : -legSwing) * side
-        ctx.beginPath()
-        ctx.moveTo(i * r * 0.4, side * r * 0.3)
-        ctx.lineTo(i * r * 0.5 + Math.cos(swing) * r * 0.2, side * (r * 0.95 + Math.sin(swing) * r * 0.15))
-        ctx.lineTo(i * r * 0.7 + r * 0.15, side * r * 1.2)
-        ctx.stroke()
-      }
-    }
-    // Antennae
-    ctx.lineWidth = Math.max(1.5, r * 0.07)
-    for (const side of [-1, 1]) {
-      ctx.beginPath()
-      ctx.moveTo(r * 0.75, side * r * 0.15)
-      ctx.quadraticCurveTo(r * 1.2, side * r * 0.3, r * 1.35, side * (r * 0.55 + Math.sin(t * 6) * r * 0.08))
-      ctx.stroke()
-    }
-    // Abdomen and head
-    ctx.shadowColor = color
-    ctx.shadowBlur = options.boss ? 30 : 12
-    ctx.fillStyle = options.flash > 0 ? "#ffffff" : color
-    ctx.beginPath(); ctx.ellipse(-r * 0.15, 0, r * 0.85, r * 0.68, 0, 0, Math.PI * 2); ctx.fill()
-    ctx.shadowBlur = 0
-    ctx.fillStyle = options.flash > 0 ? "#ffffff" : shade(color, -0.35)
-    ctx.beginPath(); ctx.arc(r * 0.68, 0, r * 0.36, 0, Math.PI * 2); ctx.fill()
-    // Wing split and spots
-    ctx.strokeStyle = shade(color, -0.5)
-    ctx.lineWidth = Math.max(1.5, r * 0.06)
-    ctx.beginPath(); ctx.moveTo(r * 0.45, 0); ctx.lineTo(-r * 0.95, 0); ctx.stroke()
-    ctx.fillStyle = shade(color, -0.45)
-    for (const [sx, sy] of [[-0.45, 0.32], [-0.1, -0.35], [0.15, 0.3], [-0.6, -0.25]] as const) {
-      ctx.beginPath(); ctx.arc(sx * r, sy * r, r * 0.11, 0, Math.PI * 2); ctx.fill()
-    }
-    // Eyes
-    ctx.fillStyle = options.reopened ? "#ff2040" : "#ffffff"
-    ctx.beginPath(); ctx.arc(r * 0.85, -r * 0.14, r * 0.1, 0, Math.PI * 2); ctx.arc(r * 0.85, r * 0.14, r * 0.1, 0, Math.PI * 2); ctx.fill()
-    if (options.trait === "armored") {
-      ctx.strokeStyle = "#c8d0dc"
-      ctx.lineWidth = 3
-      ctx.setLineDash([6, 4])
-      ctx.beginPath(); ctx.ellipse(-r * 0.15, 0, r * 0.95, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke()
-      ctx.setLineDash([])
-    }
+    paintBug(ctx, r, color, t, options)
     ctx.restore()
     if (options.trait === "armored") {
       ctx.font = `${Math.round(r * 0.7)}px ${SANS}`
@@ -356,29 +239,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     ctx.fillStyle = "rgba(0,0,0,0.35)"
     ctx.beginPath(); ctx.ellipse(3, 6, 18, 12, 0, 0, Math.PI * 2); ctx.fill()
     ctx.rotate(aim)
-    // Laptop-gun
-    ctx.fillStyle = "#2b2f3a"
-    ctx.fillRect(8, -5, 22, 10)
-    ctx.fillStyle = view.buffs.hotfix > 0 ? "#ff9440" : "#7fdcff"
-    ctx.shadowColor = ctx.fillStyle
-    ctx.shadowBlur = 12
-    ctx.fillRect(26, -3, 6, 6)
-    ctx.shadowBlur = 0
-    // Hoodie, in the developer's colour.
-    ctx.fillStyle = view.color
-    ctx.beginPath(); ctx.arc(0, 0, PLAYER.radius, 0, Math.PI * 2); ctx.fill()
-    ctx.fillStyle = shade(view.color, -0.2)
-    ctx.beginPath(); ctx.arc(-4, 0, PLAYER.radius * 0.75, Math.PI * 0.5, Math.PI * 1.5); ctx.fill()
-    // Head and headphones
-    ctx.fillStyle = "#f2c9a0"
-    ctx.beginPath(); ctx.arc(2, 0, 8, 0, Math.PI * 2); ctx.fill()
-    ctx.fillStyle = "#3b2a20"
-    ctx.beginPath(); ctx.arc(0, 0, 8.5, Math.PI * 0.55, Math.PI * 1.45); ctx.fill()
-    ctx.strokeStyle = "#111"
-    ctx.lineWidth = 3
-    ctx.beginPath(); ctx.arc(1, 0, 10, -Math.PI * 0.5, Math.PI * 0.5, true); ctx.stroke()
-    ctx.fillStyle = "#ff4d6d"
-    ctx.fillRect(-2, -12, 6, 5); ctx.fillRect(-2, 7, 6, 5)
+    paintPlayer(ctx, view.color, view.buffs.hotfix > 0)
     ctx.restore()
     ctx.globalAlpha = 1
     if (view.buffs.unitTest > 0) {
@@ -443,26 +304,10 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     } else {
       for (const [i, ping] of call.pings.entries()) {
         const bob = Math.sin(time * 4 + i * 2) * 4
-        const y = ping.y + bob
-        ctx.font = `bold 12px ${SANS}`
-        ctx.textAlign = "left"
-        const w = ctx.measureText(ping.text).width + 40
-        const left = ping.x - w / 2
-        ctx.shadowColor = "#7fb8ff"
-        ctx.shadowBlur = 14
-        ctx.fillStyle = "rgba(20,28,48,0.95)"
-        ctx.strokeStyle = color
-        ctx.lineWidth = 2
-        roundRect(ctx, left, y - 16, w, 32, 10)
-        ctx.fill(); ctx.stroke()
-        ctx.shadowBlur = 0
-        ctx.beginPath(); ctx.moveTo(ping.x - 6, y + 16); ctx.lineTo(ping.x, y + 25); ctx.lineTo(ping.x + 6, y + 16); ctx.closePath()
-        ctx.fillStyle = color; ctx.fill()
-        ctx.font = `14px ${SANS}`
-        ctx.fillText("💬", left + 8, y + 5)
-        ctx.font = `bold 12px ${SANS}`
-        ctx.fillStyle = "#e8ecf4"
-        ctx.fillText(ping.text, left + 30, y + 4)
+        ctx.save()
+        ctx.translate(ping.x, ping.y + bob)
+        paintPing(ctx, ping.text, color)
+        ctx.restore()
       }
     }
     ctx.globalAlpha = 1
@@ -512,27 +357,16 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     ctx.fillText(boss.key, x, y - boss.radius - 14)
   }
 
-  const label = (text: string, x: number, y: number, color: string, size = 11, border?: string) => {
-    ctx.font = `bold ${size}px ${MONO}`
-    ctx.textAlign = "center"
-    const w = ctx.measureText(text).width + 8
-    ctx.fillStyle = "rgba(0,0,0,0.6)"
-    roundRect(ctx, x - w / 2, y - size, w, size + 5, 4)
-    ctx.fill()
-    if (border) {
-      ctx.strokeStyle = border
-      ctx.lineWidth = 1
-      ctx.stroke()
-    }
-    ctx.fillStyle = color
-    ctx.fillText(text, x, y)
-  }
+  const label = (text: string, x: number, y: number, color: string, size = 11, border?: string) => paintLabel(ctx, text, x, y, color, size, border)
 
   // --- Frame ------------------------------------------------------------
 
   const draw = (view: View, cursor: Vec, dt: number) => {
     time += dt
-    if (floorLevel !== `${view.level.id}:${locale()}`) buildFloor(view.level)
+    if (floorLevel !== floorKey(view.level)) {
+      floor = paintFloor(view.level)
+      floorLevel = floorKey(view.level)
+    }
     const width = canvas.clientWidth
     const height = canvas.clientHeight
     const dpr = canvas.width / Math.max(1, width)
@@ -607,20 +441,10 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
       const bob = Math.sin(time * 4 + x) * 3
       const fading = pickup.life < 3 && Math.floor(time * 8) % 2 === 0
       if (fading) continue
-      ctx.fillStyle = "rgba(157,255,176,0.15)"
-      ctx.strokeStyle = "#9dffb0"
-      ctx.lineWidth = 2
-      ctx.shadowColor = "#9dffb0"
-      ctx.shadowBlur = 14
-      roundRect(ctx, x - 17, y - 17 + bob, 34, 34, 8)
-      ctx.fill(); ctx.stroke()
-      ctx.shadowBlur = 0
-      ctx.font = `20px ${SANS}`
-      ctx.textAlign = "center"
-      ctx.fillText(pickupInfo(pickup.kind).icon, x, y + 7 + bob)
-      ctx.font = `bold 10px ${MONO}`
-      ctx.fillStyle = "#9dffb0"
-      ctx.fillText(pickupInfo(pickup.kind).label, x, y + 32 + bob)
+      ctx.save()
+      ctx.translate(x, y + bob)
+      paintPickup(ctx, pickup.kind)
+      ctx.restore()
     }
 
     // Bugs
@@ -702,25 +526,10 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
 
     for (const shot of view.hostile) {
       const { x, y } = shot.position
-      if (shot.text.length <= 2) {
-        ctx.font = `18px ${SANS}`
-        ctx.textAlign = "center"
-        ctx.fillText(shot.text, x, y + 6)
-        continue
-      }
-      ctx.font = `bold 11px ${MONO}`
-      const w = ctx.measureText(shot.text).width + 10
-      ctx.fillStyle = "#2a0a12"
-      ctx.strokeStyle = "#ff4d6d"
-      ctx.lineWidth = 1.5
-      ctx.shadowColor = "#ff4d6d"
-      ctx.shadowBlur = 10
-      roundRect(ctx, x - w / 2, y - 9, w, 18, 9)
-      ctx.fill(); ctx.stroke()
-      ctx.shadowBlur = 0
-      ctx.fillStyle = "#ffb3c0"
-      ctx.textAlign = "center"
-      ctx.fillText(shot.text, x, y + 4)
+      ctx.save()
+      ctx.translate(x, y)
+      paintHostile(ctx, shot.text)
+      ctx.restore()
     }
 
     // Teammates first, then whoever this screen follows on top.
@@ -837,29 +646,14 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     if (hovered && !chip) {
       const hx = (hovered.position.x - camera.x) * camera.scale
       const hy = (hovered.position.y - camera.y) * camera.scale
-      const lines = wrap(hovered.summary, 44)
-      const trait = t().traits[hovered.trait]
-      const boxW = 300
-      const boxH = 44 + lines.length * 16 + (trait ? 16 : 0)
+      const boxW = TOOLTIP_WIDTH
+      const boxH = tooltipHeight(hovered)
       const bx = Math.min(width - boxW - 10, hx + 30)
       const by = Math.max(110, Math.min(height - boxH - 10, hy - boxH / 2))
-      ctx.fillStyle = "rgba(10,12,20,0.92)"
-      ctx.strokeStyle = bugKinds[hovered.priority].color
-      ctx.lineWidth = 1.5
-      roundRect(ctx, bx, by, boxW, boxH, 8)
-      ctx.fill(); ctx.stroke()
-      ctx.textAlign = "left"
-      ctx.font = `bold 12px ${MONO}`
-      ctx.fillStyle = bugKinds[hovered.priority].color
-      ctx.fillText(`${hovered.key}  ·  ${hovered.priority}`, bx + 12, by + 20)
-      ctx.font = `13px ${SANS}`
-      ctx.fillStyle = "#e8ecf4"
-      lines.forEach((line, i) => ctx.fillText(line, bx + 12, by + 40 + i * 16))
-      if (trait) {
-        ctx.font = `bold 10px ${MONO}`
-        ctx.fillStyle = "#9aa4b8"
-        ctx.fillText(trait, bx + 12, by + 40 + lines.length * 16 + 4)
-      }
+      ctx.save()
+      ctx.translate(bx, by)
+      paintTooltip(ctx, hovered, bugKinds[hovered.priority].color)
+      ctx.restore()
     }
 
     const hudShade = ctx.createLinearGradient(0, 0, 0, 120)
@@ -917,7 +711,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
       ctx.fillStyle = "#9aa4b8"
       ctx.fillText(t().hud.sanity, 20, 50)
       for (let i = 0; i < player.maxHp; i++) {
-        drawHeart(20 + i * 24, 58, i < player.hp ? "#ff4d6d" : "rgba(255,255,255,0.15)")
+        paintHeart(ctx, 20 + i * 24, 58, i < player.hp ? "#ff4d6d" : "rgba(255,255,255,0.15)")
       }
       ctx.font = `11px ${MONO}`
       ctx.fillStyle = "#9aa4b8"
@@ -1097,48 +891,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     ctx.restore()
   }
 
-  const drawHeart = (x: number, y: number, color: string) => {
-    ctx.fillStyle = color
-    ctx.beginPath()
-    ctx.moveTo(x + 9, y + 16)
-    ctx.bezierCurveTo(x - 4, y + 7, x + 1, y - 2, x + 9, y + 4)
-    ctx.bezierCurveTo(x + 17, y - 2, x + 22, y + 7, x + 9, y + 16)
-    ctx.fill()
-  }
-
   return { draw, fx, toWorld, toScreen, showBanner, camera, clientColor: (id: keyof typeof clients) => clients[id].color }
 }
 
 export type Renderer = ReturnType<typeof makeRenderer>
-
-const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
-  ctx.beginPath()
-  ctx.roundRect(x, y, Math.max(0, w), h, Math.min(r, h / 2, Math.max(0, w) / 2))
-}
-
-const truncate = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
-
-const wrap = (text: string, width: number): Array<string> => {
-  const words = text.split(" ")
-  const lines: Array<string> = []
-  let line = ""
-  for (const word of words) {
-    if ((line + " " + word).trim().length > width) {
-      if (line) lines.push(line)
-      line = word
-    } else {
-      line = (line + " " + word).trim()
-    }
-  }
-  if (line) lines.push(line)
-  return lines.slice(0, 4)
-}
-
-const shade = (hex: string, amount: number): string => {
-  const n = parseInt(hex.slice(1), 16)
-  const f = (c: number) => Math.max(0, Math.min(255, Math.round(c + (amount < 0 ? c * amount : (255 - c) * amount))))
-  const r = f((n >> 16) & 255)
-  const g = f((n >> 8) & 255)
-  const b = f(n & 255)
-  return `rgb(${r},${g},${b})`
-}
