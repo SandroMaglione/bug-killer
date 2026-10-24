@@ -1002,11 +1002,11 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     }
   }
 
-  /** Top-right under the score on desktop; bottom-centre on touch, between the two thumbs. */
+  /** Bottom-centre, where the eye reaches it on a wide screen and between the two thumbs on a phone. */
   const minimapRect = (width: number, height: number) => {
     const w = Math.round(Math.max(105, Math.min(180, width * 0.14)))
     const h = Math.round((w * ARENA.height) / ARENA.width)
-    return touchMode() ? { x: Math.round(width / 2 - w / 2), y: height - h - 10, w, h } : { x: width - w - 20, y: 108, w, h }
+    return { x: Math.round(width / 2 - w / 2), y: height - h - 10, w, h }
   }
 
   /** The whole arena at a glance: bugs, bosses, power-ups, the call to answer, and what the camera sees. */
