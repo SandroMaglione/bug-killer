@@ -60,7 +60,7 @@ export const makeChat = (root: HTMLElement, onMessage: (event: ChatValue) => voi
     if (event.type === "nudge") row.classList.add("nudge")
     if (event.type === "call") row.classList.add("call")
     list.prepend(row)
-    while (list.children.length > 3) list.lastElementChild?.remove()
+    while (list.children.length > 2) list.lastElementChild?.remove()
 
     const delay = event.client === "ugo" ? 350 : 800
     const timer = window.setTimeout(() => {
