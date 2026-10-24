@@ -516,7 +516,6 @@ body.touch .text { min-width: 0; margin: 0; font-size: 11px; white-space: nowrap
   8%, 80% { opacity: 0.9; transform: none; }
   to { opacity: 0; visibility: hidden; }
 }
-}
 
 .rotate {
   position: fixed;
