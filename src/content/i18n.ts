@@ -165,8 +165,10 @@ export interface Strings {
     readonly playAgain: string
     readonly connecting: string
     readonly lost: string
+    /** The run server never answered: down, or out of its daily quota. */
+    readonly unreachable: string
     readonly pauseBody: string
-    readonly errors: Record<"notFound" | "full" | "started" | "nameTaken" | "badName" | "badLevel" | "notHost", string>
+    readonly errors: Record<"notFound" | "full" | "started" | "nameTaken" | "badName" | "badLevel" | "notHost" | "busy", string>
   }
 }
 

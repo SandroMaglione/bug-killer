@@ -292,6 +292,7 @@ export const it: Strings = {
     playAgain: "Rigioca",
     connecting: "Connessione…",
     lost: "Connessione alla run persa.",
+    unreachable: "Il server delle run non risponde: riprova più tardi.",
     pauseBody: "La run continua senza di te: i bug non fanno pause.",
     errors: {
       notFound: "Nessuna run con questo codice.",
@@ -300,7 +301,8 @@ export const it: Strings = {
       nameTaken: "Qualcuno in questa run ha già questo nome.",
       badName: "Prima scegli un nome.",
       badLevel: "Questo sprint non esiste.",
-      notHost: "Solo l'host può iniziare."
+      notHost: "Solo l'host può iniziare.",
+      busy: "Troppe run aperte in questo momento: riprova tra poco, o gioca da solo."
     }
   }
 }

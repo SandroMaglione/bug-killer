@@ -20,6 +20,10 @@ const STEPS_PER_FRAME = 2
 /** A running room nobody is connected to waits this long for someone to come back. */
 const EMPTY_GRACE_SECONDS = 60
 const MAX_STEPS_PER_ADVANCE = 5
+/** Every run steps in one thread: past a handful, they would all lag together. */
+export const MAX_ROOMS = 10
+/** So that one address cannot hold every run, while an office still fits two teams. */
+export const MAX_ROOMS_PER_ADDRESS = 2
 
 const playable: ReadonlyArray<Level> = [...levels, endlessLevel]
 export const isLevelId = (id: unknown): id is LevelId => (levelIds as ReadonlyArray<unknown>).includes(id)
@@ -28,6 +32,8 @@ const levelOf = (id: LevelId): Level => playable.find((level) => level.id === id
 /** One browser connection, as the rooms see it. */
 export interface Peer {
   readonly send: (message: ServerMessage) => void
+  /** Where the browser connects from, when the server knows it; without it only `maxRooms` applies. */
+  readonly address?: string
 }
 
 interface Seat {
@@ -55,10 +61,16 @@ interface Room {
 export interface RoomsOptions {
   /** Defaults to `Math.random`; tests pass a seeded one. */
   readonly random?: () => number
+  /** Defaults to `MAX_ROOMS`. */
+  readonly maxRooms?: number
+  /** Defaults to `MAX_ROOMS_PER_ADDRESS`. */
+  readonly maxRoomsPerAddress?: number
 }
 
 export const makeRooms = (options: RoomsOptions = {}) => {
   const random = options.random ?? Math.random
+  const maxRooms = options.maxRooms ?? MAX_ROOMS
+  const maxRoomsPerAddress = options.maxRoomsPerAddress ?? MAX_ROOMS_PER_ADDRESS
   const rooms = new Map<string, Room>()
   const where = new Map<Peer, { room: Room; slot: number }>()
 
@@ -100,6 +112,13 @@ export const makeRooms = (options: RoomsOptions = {}) => {
       if (!room.seats.some((seat) => seat.slot === slot)) return slot
     }
     return null
+  }
+
+  /** Rooms where someone connected from `address` is seated. */
+  const roomsFrom = (address: string) => {
+    let count = 0
+    for (const room of rooms.values()) if (room.seats.some((seat) => seat.peer?.address === address)) count += 1
+    return count
   }
 
   const sameName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0
@@ -182,6 +201,8 @@ export const makeRooms = (options: RoomsOptions = {}) => {
         const name = cleanName(message.name)
         if (!name) return fail(peer, "badName")
         if (at) leave(peer)
+        if (rooms.size >= maxRooms) return fail(peer, "busy")
+        if (peer.address !== undefined && roomsFrom(peer.address) >= maxRoomsPerAddress) return fail(peer, "busy")
         const room: Room = {
           code: newCode(),
           level: message.level,

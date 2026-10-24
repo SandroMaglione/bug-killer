@@ -43,7 +43,8 @@ export interface RoomInfo {
 /** The world as the server last stepped it; the level travels as its id. */
 export type NetView = Omit<View, "level">
 
-export type ErrorCode = "notFound" | "full" | "started" | "nameTaken" | "badName" | "badLevel" | "notHost"
+/** `busy`: the server already holds as many runs, or connections, as it takes. */
+export type ErrorCode = "notFound" | "full" | "started" | "nameTaken" | "badName" | "badLevel" | "notHost" | "busy"
 
 export type ClientMessage =
   | { readonly t: "create"; readonly name: string; readonly level: LevelId; readonly locale: Locale }

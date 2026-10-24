@@ -71,7 +71,9 @@ Production runs on Cloudflare Workers (`wrangler.jsonc`): the built game is stat
 
 Without `DEPLOY_DOMAIN` the workflow only checks, so a fork never tries to deploy. By hand: `pnpm exec wrangler login`, then `pnpm build && pnpm exec wrangler deploy --domain <your domain>`.
 
-The Workers Free plan is enough for a hobby. Static files are free and unlimited, and single player never touches the server. The Durable Object gets 100,000 requests a day, and incoming WebSocket messages count 1 in 20: at 30 inputs a second, about 18 hours of play per developer per day, reset at 00:00 UTC. Nothing is stored, so a deploy ends the runs in progress.
+The Workers Free plan is enough for a hobby. Static files are free and unlimited, and single player never touches the server. The Durable Object gets 100,000 requests a day, and incoming WebSocket messages count 1 in 20: at 30 inputs a second, about 18 hours of play a day, counting every developer in every run together (twenty people playing for an hour use it up), reset at 00:00 UTC. Past the quota multiplayer stops answering until the reset, and the game says so; the Free plan never bills. Nothing is stored, so a deploy ends the runs in progress.
+
+Since every run steps in that one object, the server holds at most 10 runs (`MAX_ROOMS` in `src/server/rooms.ts`), 2 of them from the same address, and the Worker takes at most 50 connections, 8 from the same address (`src/server/worker.ts`). Past any of these the game answers that the server is busy. A [rate limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/) on `/runs` in the Cloudflare dashboard (one is free) also stops anyone opening sockets in a loop before they reach the Worker.
 
 ## License
 

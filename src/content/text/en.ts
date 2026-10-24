@@ -292,6 +292,7 @@ export const en: Strings = {
     playAgain: "Play again",
     connecting: "Connecting…",
     lost: "Connection to the run lost.",
+    unreachable: "The run server is not answering: try again later.",
     pauseBody: "The run goes on without you: the bugs don't take breaks.",
     errors: {
       notFound: "No run with that code.",
@@ -300,7 +301,8 @@ export const en: Strings = {
       nameTaken: "Somebody in that run already has that name.",
       badName: "Pick a name first.",
       badLevel: "That sprint doesn't exist.",
-      notHost: "Only the host can start."
+      notHost: "Only the host can start.",
+      busy: "Too many runs open right now: try again in a bit, or play solo."
     }
   }
 }
