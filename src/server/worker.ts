@@ -7,10 +7,15 @@ import { DurableObject } from "cloudflare:workers"
 
 import { MESSAGE_MAX, SOCKET_PATH } from "../net/protocol.ts"
 import type { ServerMessage } from "../net/protocol.ts"
-import { makeRooms } from "./rooms.ts"
+import { PARTY } from "../sim/constants.ts"
+import { MAX_ROOMS, makeRooms } from "./rooms.ts"
 import type { Peer } from "./rooms.ts"
 
 const TICK_MS = 1000 / 60
+/** Every run full, and some more for whoever is on the lobby form or about to be told the server is busy. */
+const MAX_CONNECTIONS = MAX_ROOMS * PARTY.maxPlayers + 10
+/** Two teams behind one office's address fit; one script opening sockets does not get far. */
+const MAX_CONNECTIONS_PER_ADDRESS = 8
 /** A few missed keepalives (`KEEPALIVE_MS`), and over a minute: Chrome wakes a tab hidden for a while only once a minute. */
 const SILENT_MS = 90000
 
@@ -38,11 +43,19 @@ export class Runs extends DurableObject<Env> {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("Expected a WebSocket", { status: 426 })
     const { 0: client, 1: socket } = new WebSocketPair()
     socket.accept()
+    const address = request.headers.get("CF-Connecting-IP")
+    if (this.sockets.size >= MAX_CONNECTIONS || (address !== null && this.connectionsFrom(address) >= MAX_CONNECTIONS_PER_ADDRESS)) {
+      // Accepted only to say why: a refused upgrade reaches the browser as a bare failure.
+      socket.send(JSON.stringify({ t: "error", code: "busy" } satisfies ServerMessage))
+      socket.close(1013, "busy")
+      return new Response(null, { status: 101, webSocket: client })
+    }
     const connection: Connection = {
       peer: {
         send: (message: ServerMessage) => {
           if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
-        }
+        },
+        ...(address === null ? {} : { address })
       },
       seen: performance.now()
     }
@@ -55,6 +68,12 @@ export class Runs extends DurableObject<Env> {
     socket.addEventListener("error", () => this.drop(socket))
     this.start()
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  private connectionsFrom(address: string) {
+    let count = 0
+    for (const connection of this.sockets.values()) if (connection.peer.address === address) count += 1
+    return count
   }
 
   private drop(socket: WebSocket) {

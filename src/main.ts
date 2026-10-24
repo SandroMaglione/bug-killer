@@ -314,6 +314,12 @@ const openRemote = (): Remote => {
         remote = null
         markRun(null)
         if (mode === "menu") return
+        if (mode === "lobby" && !opened.room) {
+          // Still on the form: a busy or unreachable server is said there, not on a screen of its own.
+          const line = overlay.querySelector(".multi-error")
+          if (line && !line.textContent) line.textContent = t().multi.unreachable
+          return
+        }
         setMode("over")
         chatRoot.hidden = true
         show(html`<div class="panel"><h2 class="lose">📡 ${t().multi.lost}</h2><div class="actions"><button data-act="menu" class="primary">${t().pause.menu}</button></div></div>`)
@@ -376,6 +382,8 @@ const showMulti = (error?: ErrorCode, code = new URLSearchParams(location.search
       return null
     }
     saveName(value)
+    // A new try: whatever went wrong last time is no longer news.
+    form.querySelector(".multi-error")!.textContent = ""
     return value
   }
   const join = () => {

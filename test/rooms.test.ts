@@ -6,9 +6,9 @@ import { makeRooms } from "../src/server/rooms.ts"
 import type { Peer } from "../src/server/rooms.ts"
 
 /** A browser that keeps everything the server sent it. */
-const browser = () => {
+const browser = (address?: string) => {
   const inbox: Array<ServerMessage> = []
-  const peer: Peer = { send: (message) => inbox.push(message) }
+  const peer: Peer = { send: (message) => inbox.push(message), ...(address === undefined ? {} : { address }) }
   const last = <T extends ServerMessage["t"]>(t: T) => [...inbox].reverse().find((m): m is Extract<ServerMessage, { t: T }> => m.t === t)
   return { peer, inbox, last }
 }
@@ -141,6 +141,36 @@ test("four seats at most", () => {
   const fifth = browser()
   send(rooms, fifth, { t: "join", code, name: "Dev4" })
   assert.equal(fifth.last("error")?.code, "full")
+})
+
+test("past the most runs the server holds, a new one is refused until one closes", () => {
+  const rooms = makeRooms({ random: seeded(), maxRooms: 2 })
+  const ada = browser()
+  const bob = browser()
+  send(rooms, ada, { t: "create", name: "Ada", level: "glacier", locale: "en" })
+  send(rooms, bob, { t: "create", name: "Bob", level: "glacier", locale: "en" })
+  const late = browser()
+  send(rooms, late, { t: "create", name: "Late", level: "glacier", locale: "en" })
+  assert.equal(late.last("error")?.code, "busy")
+  assert.equal(rooms.count(), 2)
+  // Joining a run that exists is still fine.
+  send(rooms, late, { t: "join", code: ada.last("room")!.room.code, name: "Late" })
+  assert.equal(late.last("room")?.room.members.length, 2)
+  send(rooms, bob, { t: "leave" })
+  const later = browser()
+  send(rooms, later, { t: "create", name: "Later", level: "glacier", locale: "en" })
+  assert.ok(later.last("room"))
+})
+
+test("one address holds only a couple of runs; others are not affected", () => {
+  const rooms = makeRooms({ random: seeded(), maxRoomsPerAddress: 2 })
+  for (const name of ["A", "B"]) send(rooms, browser("203.0.113.7"), { t: "create", name, level: "glacier", locale: "en" })
+  const third = browser("203.0.113.7")
+  send(rooms, third, { t: "create", name: "C", level: "glacier", locale: "en" })
+  assert.equal(third.last("error")?.code, "busy")
+  const elsewhere = browser("198.51.100.1")
+  send(rooms, elsewhere, { t: "create", name: "D", level: "glacier", locale: "en" })
+  assert.ok(elsewhere.last("room"))
 })
 
 test("when the run ends the room goes back to the lobby, and the host starts the next one", () => {
