@@ -755,7 +755,8 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
       ctx.fillText(f.text, f.x + 1, y + 1)
       ctx.fillStyle = f.color
       ctx.fillText(f.text, f.x, y)
-      if (f.sub) {
+      // On a phone the small popups keep only their headline: the ticket summary covers the arena.
+      if (f.sub && (f.big || !touchMode())) {
         ctx.font = `${f.big ? 14 : 11}px ${SANS}`
         ctx.fillStyle = "#d8dee9"
         ctx.fillText(truncate(f.sub, f.big ? 70 : 46), f.x, y + (f.big ? 22 : 15))
@@ -1001,7 +1002,7 @@ export const makeRenderer = (canvas: HTMLCanvasElement) => {
     }
   }
 
-  /** Top-right under the score on desktop; bottom-centre on touch, between the two thumbs (the chat holds the top-right). */
+  /** Top-right under the score on desktop; bottom-centre on touch, between the two thumbs. */
   const minimapRect = (width: number, height: number) => {
     const w = Math.round(Math.max(105, Math.min(180, width * 0.14)))
     const h = Math.round((w * ARENA.height) / ARENA.width)
