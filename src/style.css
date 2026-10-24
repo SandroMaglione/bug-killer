@@ -384,6 +384,26 @@ code { font-family: var(--mono); color: #ffd84a; }
 
 @keyframes slide { from { opacity: 0; transform: translateX(30px); } }
 
+/* On laptop screens the full chat would cover a good slice of the field: same panel, tighter, two messages. */
+@media (max-width: 1799px) {
+  #chat { width: min(300px, calc(100vw - 32px)); gap: 6px; }
+  .chat-header { padding: 4px 8px; font-size: 11px; }
+  .mission { padding: 8px 10px; border-radius: 10px; }
+  .mission-top .avatar { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; }
+  .mission-kind { font-size: 10px; }
+  .mission-time { font-size: 13px; }
+  .mission-goal { margin: 4px 0 6px; font-size: 12px; }
+  .bar { height: 4px; border-radius: 2px; }
+  .chat-list { gap: 6px; }
+  .msg { gap: 8px; padding: 7px 10px; border-radius: 10px; }
+  .msg:nth-child(n + 2) { opacity: 0.5; }
+  .msg:nth-child(n + 3) { display: none; }
+  .msg .avatar { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+  .meta { font-size: 11px; }
+  .meta .role { font-size: 10px; }
+  .text { margin-top: 2px; font-size: 12px; line-height: 1.35; }
+}
+
 /* ---------- Touch controls ---------- */
 
 #touch { position: fixed; inset: 0; z-index: 4; touch-action: none; }
